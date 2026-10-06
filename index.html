@@ -427,6 +427,7 @@
   </div>
 
   <script>
+    const API_BASE_URL = 'https://sell-ticket-be-demo.onrender.com';
     const MAX_TICKETS = 4;
     let currentUser = JSON.parse(localStorage.getItem('user')) || null;
     let token = localStorage.getItem('token') || null;
@@ -476,7 +477,7 @@
           const seatIdsToRelease = (session && session.seatIds) ? session.seatIds : heldSeatIds;
 
           if (token && seatIdsToRelease && seatIdsToRelease.length > 0) {
-            await fetch('http://localhost:3000/api/seats/release', {
+            await fetch(`${API_BASE_URL}/api/seats/release`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ seatIds: seatIdsToRelease })
@@ -610,7 +611,7 @@
       const email = document.getElementById('authEmail').value;
       const password = document.getElementById('authPassword').value;
       const fullName = document.getElementById('authFullName').value;
-      const url = isRegisterMode ? 'http://localhost:3000/api/auth/register' : 'http://localhost:3000/api/auth/login';
+      const url = isRegisterMode ? `${API_BASE_URL}/api/auth/register` : `${API_BASE_URL}/api/auth/login`;
 
       try {
         const res = await fetch(url, {
@@ -678,7 +679,7 @@
       const list = document.getElementById('eventList');
       list.innerHTML = 'Đang tải...';
       try {
-        const res = await fetch('http://localhost:3000/api/events');
+        const res = await fetch(`${API_BASE_URL}/api/events`);
         const data = await res.json();
         list.innerHTML = '';
         data.data.forEach(ev => {
@@ -733,7 +734,7 @@
 
     async function loadSeats() {
       try {
-        const res = await fetch(`http://localhost:3000/api/events/${currentEvent.id}/details?type=SEAT_BASED`);
+        const res = await fetch(`${API_BASE_URL}/api/events/${currentEvent.id}/details?type=SEAT_BASED`);
         const data = await res.json();
         if (data.success) {
           seatsData = data.data;
@@ -800,7 +801,7 @@
 
     async function loadZones() {
       try {
-        const res = await fetch(`http://localhost:3000/api/events/${currentEvent.id}/details?type=ZONE_BASED`);
+        const res = await fetch(`${API_BASE_URL}/api/events/${currentEvent.id}/details?type=ZONE_BASED`);
         const data = await res.json();
         if (data.success) {
           zoneMetadata = data.data;
@@ -959,7 +960,7 @@
           let res;
           if (currentEvent.event_type === 'SEAT_BASED') {
             heldSeatIds = selectedSeats.map(s => s.id);
-            res = await fetch('http://localhost:3000/api/seats/reserve', {
+            res = await fetch(`${API_BASE_URL}/api/seats/reserve`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ seatIds: heldSeatIds })
@@ -970,7 +971,7 @@
               .filter(k => zoneSelections[k] > 0)
               .map(k => ({ zoneName: k, quantity: zoneSelections[k] }));
 
-            res = await fetch('http://localhost:3000/api/seats/reserve-zone', {
+            res = await fetch(`${API_BASE_URL}/api/seats/reserve-zone`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({
@@ -1030,7 +1031,7 @@
           const returnUrl = window.location.origin + window.location.pathname + '?status=success';
           const cancelUrl = window.location.origin + window.location.pathname + '?status=cancel';
 
-          const res = await fetch('http://localhost:3000/api/seats/start-checkout', {
+          const res = await fetch(`${API_BASE_URL}/api/seats/start-checkout`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ 
@@ -1113,7 +1114,7 @@
           }
         }
 
-        const res = await fetch('http://localhost:3000/api/seats/release', {
+        const res = await fetch(`${API_BASE_URL}/api/seats/release`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ seatIds: seatsToRelease })
@@ -1201,7 +1202,7 @@
       const box = document.getElementById('orderList');
       box.innerHTML = 'Đang tải hóa đơn...';
       try {
-        const res = await fetch('http://localhost:3000/api/orders/my-history', {
+        const res = await fetch(`${API_BASE_URL}/api/orders/my-history`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -1330,7 +1331,7 @@
       // 4. Gửi request lên server
       try {
         logEl.innerText = 'Đang tạo sự kiện...';
-        const res = await fetch('http://localhost:3000/api/admin/events', {
+        const res = await fetch(`${API_BASE_URL}/api/admin/events`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1358,7 +1359,7 @@
     async function loadAdminEvents() {
       const tbody = document.querySelector('#adminEventTable tbody');
       tbody.innerHTML = '<tr><td colspan="4">Đang tải...</td></tr>';
-      const res = await fetch('http://localhost:3000/api/events');
+      const res = await fetch(`${API_BASE_URL}/api/events`);
       const data = await res.json();
       tbody.innerHTML = '';
       data.data.forEach(e => {
@@ -1375,7 +1376,7 @@
 
     async function deleteEventByAdmin(id) {
       if (!confirm('Bạn có chắc muốn xóa sự kiện này? Toàn bộ vé và đơn hàng liên quan sẽ bị xóa.')) return;
-      const res = await fetch(`http://localhost:3000/api/admin/events/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/events/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
