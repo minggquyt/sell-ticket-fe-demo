@@ -374,7 +374,7 @@
             </div>
             <div class="form-group" style="flex:1;">
               <label>Giá mỗi ghế (đ)</label>
-              <input type="number" id="admSeatPrice" value="300000" />
+              <input type="number" id="admSeatPrice" value="2000" />
             </div>
           </div>
         </div>
@@ -389,7 +389,7 @@
             </div>
             <div class="form-group" style="flex:1;">
               <label>Giá vé VIP (đ)</label>
-              <input type="number" id="admVipPrice" value="600000" />
+              <input type="number" id="admVipPrice" value="5000" />
             </div>
           </div>
           <div style="display:flex; gap:10px;">
@@ -399,7 +399,7 @@
             </div>
             <div class="form-group" style="flex:1;">
               <label>Giá vé Thường (đ)</label>
-              <input type="number" id="admRegPrice" value="300000" />
+              <input type="number" id="admRegPrice" value="3000" />
             </div>
           </div>
         </div>
@@ -447,12 +447,52 @@
 
 
     // Khởi động
+    checkPaymentReturnParams();
     updateAuthUI();
     loadEvents()
       .then(() => {
         // Khôi phục phiên giữ chỗ sau khi F5 / Reload
         restoreActiveHoldSession();
       });
+
+    // XỬ LÝ KHI PAYOS REDIRECT VỀ
+    async function checkPaymentReturnParams() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const status = urlParams.get('status');
+      const orderCode = urlParams.get('orderCode') || urlParams.get('orderId');
+
+      if (status === 'PAID' || status === 'success') {
+        alert('🎉 Thanh toán qua PayOS thành công! Vé của bạn đã được xuất chính thức.');
+        clearBookingSession();
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if (currentUser && currentUser.role === 'CUSTOMER') {
+          switchTab('history');
+        }
+      } else if (status === 'CANCELLED' || status === 'cancel') {
+        // Tự động gọi API nhả ghế khỏi Database để user không bị kẹt phiên
+        try {
+          const saved = localStorage.getItem('activeBookingSession');
+          const session = saved ? JSON.parse(saved) : null;
+          const seatIdsToRelease = (session && session.seatIds) ? session.seatIds : heldSeatIds;
+
+          if (token && seatIdsToRelease && seatIdsToRelease.length > 0) {
+            await fetch('http://localhost:3000/api/seats/release', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ seatIds: seatIdsToRelease })
+            });
+          }
+        } catch (e) {
+          console.error('Lỗi khi tự động giải phóng ghế:', e);
+        }
+
+        clearBookingSession();
+        resetBooking();
+        window.history.replaceState({}, document.title, window.location.pathname);
+        alert('Đã hủy thanh toán PayOS. Phiên giữ ghế đã được giải phóng!');
+        if (currentEvent) refreshSeatsView();
+      }
+    }
 
     // QUẢN LÝ LOCAL STORAGE CHO PHIÊN GIỮ CHỖ
     function saveBookingSession(sessionData) {
@@ -488,15 +528,22 @@
           document.getElementById('btnExitEvent').style.display = 'none';
 
           if (isProcessingPayment) {
-            // Khôi phục giao diện nút Chuyển Khoản
-            btnAction.innerText = 'Xác Nhận Đã Chuyển Khoản';
+            // Khôi phục giao diện nút Chuyển Khoản PayOS
+            btnAction.innerText = 'Mở Lại Trang PayOS';
             btnAction.disabled = false;
             btnAction.style.backgroundColor = '#8b5cf6';
-            if (btnCancel) btnCancel.style.display = 'none';
+            if (btnCancel) {
+              btnCancel.style.display = 'block';
+              btnCancel.disabled = false;
+              btnCancel.innerText = 'Hủy Giữ Ghế / Hủy Thanh Toán';
+            }
+            if (session.checkoutUrl) {
+              btnAction.onclick = () => { window.location.href = session.checkoutUrl; };
+            }
             startPaymentCountdown(session.reservedUntil);
           } else {
             // Khôi phục giao diện Giữ chỗ 5 phút
-            btnAction.innerText = 'Thanh Toán Ngay';
+            btnAction.innerText = 'Thanh Toán Ngay (PayOS)';
             btnAction.disabled = false;
             if (btnCancel) btnCancel.style.display = 'block';
             startTimer(session.reservedUntil);
@@ -970,24 +1017,31 @@
         return;
       }
 
-      // BƯỚC 2: BẮT ĐẦU THANH TOÁN (RESERVED -> PAYMENT_PROCESSING)
+      // BƯỚC 2: BẮT ĐẦU THANH TOÁN PAYOS (RESERVED -> PAYMENT_PROCESSING)
       if (isHolding && !isProcessingPayment) {
         btn.disabled = true;
-        btn.innerText = 'Đang khởi tạo thanh toán...';
+        btn.innerText = 'Đang khởi tạo mã thanh toán PayOS...';
         if (btnCancel) {
           btnCancel.disabled = true;
           btnCancel.style.display = 'none'; // Không cho hủy khi đã bước vào luồng thanh toán
         }
 
         try {
+          const returnUrl = window.location.origin + window.location.pathname + '?status=success';
+          const cancelUrl = window.location.origin + window.location.pathname + '?status=cancel';
+
           const res = await fetch('http://localhost:3000/api/seats/start-checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ seatIds: heldSeatIds })
+            body: JSON.stringify({ 
+              seatIds: heldSeatIds,
+              returnUrl: returnUrl,
+              cancelUrl: cancelUrl
+            })
           });
           const data = await res.json();
 
-          if (data.success) {
+          if (data.success && data.data && data.data.checkoutUrl) {
             isProcessingPayment = true;
             currentOrderId = data.data.orderId;
 
@@ -1001,23 +1055,17 @@
               summaryPrice: document.getElementById('summaryPrice').innerText,
               reservedUntil: data.data.paymentTimeout,
               orderId: currentOrderId,
+              checkoutUrl: data.data.checkoutUrl,
               isProcessingPayment: true
             });
 
-            document.getElementById('bookingLog').innerText = 'Ghế đã chuyển sang trạng thái chờ thanh toán. Vui lòng chuyển khoản.';
+            document.getElementById('bookingLog').innerText = 'Đang chuyển hướng sang cổng thanh toán PayOS (VietQR)...';
 
-            // Đổi giao diện nút thành nút giả lập chuyển khoản
-            btn.innerText = 'Quét mã QR chuyển khoản';
-            btn.className = 'btn-primary';
-            btn.style.backgroundColor = '#8b5cf6'; // Đổi sang màu tím
-            btn.disabled = false;
-
-            // Kích hoạt đồng hồ đếm ngược 1 phút từ Backend trả về
-            startPaymentCountdown(data.data.paymentTimeout);
-            refreshSeatsView();
+            // Chuyển hướng trình duyệt sang cổng thanh toán PayOS giống như Card.jsx của bạn
+            window.location.href = data.data.checkoutUrl;
           } else {
-            document.getElementById('bookingLog').innerText = data.message;
-            alert(data.message);
+            document.getElementById('bookingLog').innerText = data.message || 'Không thể tạo liên kết thanh toán';
+            alert(data.message || 'Không thể tạo liên kết thanh toán');
             clearBookingSession();
             resetBooking();
             refreshSeatsView();
@@ -1034,41 +1082,17 @@
         return;
       }
 
-      // BƯỚC 3: XÁC NHẬN CHUYỂN KHOẢN (GỌI WEBHOOK & BLOCK THỜI GIAN)
+      // BƯỚC 3: MỞ LẠI TRANG PAYOS / KIỂM TRA TRẠNG THÁI
       if (isHolding && isProcessingPayment) {
-        // 1. BLOCK NGAY LẬP TỨC ĐỒNG HỒ ĐẾM NGƯỢC (Dù đang ở giây thứ 29/30)
-        clearInterval(timerInterval);
-
-        // 2. Khóa nút bấm và đổi trạng thái chờ
-        btn.disabled = true;
-        btn.innerText = 'Đang đợi hệ thống xác nhận thanh toán...';
-        countdownBox.style.color = '#38bdf8';
-        countdownBox.innerHTML = '⏳ <span>Đang kiểm tra giao dịch từ ngân hàng, vui lòng không tắt trang...</span>';
-
-        try {
-          // Gọi API Webhook (Giả lập ngân hàng xác nhận)
-          const webhookRes = await fetch('http://localhost:3000/api/payment/webhook', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: currentOrderId, success: true })
-          });
-          const webhookData = await webhookRes.json();
-
-          if (webhookData.success) {
-            alert('🎉 Thanh toán thành công! Vé của bạn đã được xuất chính thức.');
-            clearBookingSession();
-            resetBooking();
-            refreshSeatsView();
-          } else {
-            alert('Thanh toán thất bại hoặc đơn hàng đã quá hạn.');
-            clearBookingSession();
-            resetBooking();
-            refreshSeatsView();
-          }
-        } catch (err) {
-          document.getElementById('bookingLog').innerText = 'Lỗi kết nối Webhook: ' + err.message;
-          btn.disabled = false;
-          btn.innerText = 'Thử xác nhận lại';
+        const saved = localStorage.getItem('activeBookingSession');
+        if (saved) {
+          try {
+            const session = JSON.parse(saved);
+            if (session.checkoutUrl) {
+              window.location.href = session.checkoutUrl;
+              return;
+            }
+          } catch(e) {}
         }
       }
     }
@@ -1078,19 +1102,29 @@
       if (!confirm('Bạn có chắc chắn muốn hủy giữ các ghế này không?')) return;
 
       try {
+        let seatsToRelease = (heldSeatIds && heldSeatIds.length > 0) ? heldSeatIds : [];
+        if (seatsToRelease.length === 0) {
+          const saved = localStorage.getItem('activeBookingSession');
+          if (saved) {
+            try {
+              const s = JSON.parse(saved);
+              seatsToRelease = s.seatIds || [];
+            } catch (e) {}
+          }
+        }
+
         const res = await fetch('http://localhost:3000/api/seats/release', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ seatIds: heldSeatIds })
+          body: JSON.stringify({ seatIds: seatsToRelease })
         });
         const data = await res.json();
         if (data.success) {
           alert('Đã hủy giữ ghế thành công. Các ghế đã được mở lại cho người khác.');
-          // ẩn btn release  
-          document.querySelector("#btnCancelHold").style.display = 'none';
-          // set lại text của bookingLog
+          const btnCancel = document.querySelector("#btnCancelHold");
+          if (btnCancel) btnCancel.style.display = 'none';
           const bookingLog = document.querySelector("#bookingLog");
-          bookingLog.innerHTML = '';
+          if (bookingLog) bookingLog.innerHTML = '';
 
           clearBookingSession();
           resetBooking();
