@@ -381,7 +381,7 @@ export default function EventsPage({ events, onSelectEvent }) {
                 {[
                   { id: 'all', label: 'Tất cả trạng thái' },
                   { id: 'ongoing', label: 'Đang mở bán vé' },
-                  { id: 'upcoming', label: 'Sắp diễn ra' }
+                  { id: 'upcoming', label: 'Sắp mở bán' }
                 ].map(item => (
                   <button
                     key={item.id}
@@ -533,7 +533,7 @@ export default function EventsPage({ events, onSelectEvent }) {
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    {event.status === 'ongoing' ? '● Đang mở bán' : 'Sắp diễn ra'}
+                    {event.status === 'ongoing' ? '● Đang mở bán' : '🔒 Sắp mở bán'}
                   </span>
                 </div>
 
