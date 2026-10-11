@@ -667,7 +667,7 @@ export default function AdminPage({
                               whiteSpace: 'nowrap',
                               display: 'inline-block'
                             }}>
-                              {ev.status === 'ongoing' ? 'Đang mở bán' : 'Sắp diễn ra'}
+                              {ev.status === 'ongoing' ? 'Đang mở bán' : 'Sắp mở bán'}
                             </span>
                           </td>
 
@@ -1053,8 +1053,9 @@ export default function AdminPage({
         <div style={{
           position: 'fixed',
           inset: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.85)',
-          backdropFilter: 'blur(8px)',
+          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+          backdropFilter: 'blur(5px)',
+          WebkitBackdropFilter: 'blur(5px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1148,7 +1149,7 @@ export default function AdminPage({
                     }}
                   >
                     <option value="ongoing">Đang mở bán vé</option>
-                    <option value="upcoming">Sắp diễn ra</option>
+                    <option value="upcoming">Sắp mở bán</option>
                   </select>
                 </div>
               </div>
@@ -1376,8 +1377,9 @@ export default function AdminPage({
         <div style={{
           position: 'fixed',
           inset: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          backdropFilter: 'blur(6px)',
+          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+          backdropFilter: 'blur(5px)',
+          WebkitBackdropFilter: 'blur(5px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
