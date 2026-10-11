@@ -17,7 +17,7 @@ import {
   UserCheck
 } from 'lucide-react';
 
-export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
+export default function Navbar({ currentRoute, onNavigate, user, onLogout, cart = [], onOpenCart }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -97,35 +97,37 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
           </div>
         </div>
 
-        {/* Navigation links - Main nav chỉ giữ khám phá sự kiện */}
-        <nav style={{
-          display: 'none',
-          alignItems: 'center',
-          gap: '8px',
-          backgroundColor: 'rgba(255, 255, 255, 0.03)',
-          padding: '6px 8px',
-          borderRadius: 'var(--radius-full)',
-          border: '1px solid var(--border-color)'
-        }} className="desktop-nav">
-          <button
-            onClick={() => onNavigate('events')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 18px',
-              borderRadius: 'var(--radius-full)',
-              background: currentRoute === 'events' ? 'var(--bg-tertiary)' : 'transparent',
-              color: currentRoute === 'events' ? '#fff' : 'var(--text-muted)',
-              fontWeight: 600,
-              fontSize: '14px',
-              border: currentRoute === 'events' ? '1px solid var(--border-glow)' : '1px solid transparent'
-            }}
-          >
-            <Compass size={16} />
-            Khám phá Sự kiện
-          </button>
-        </nav>
+        {/* Navigation links - Khám phá sự kiện (Ẩn khi đang ở trang login) */}
+        {currentRoute !== 'login' && (
+          <nav style={{
+            display: 'none',
+            alignItems: 'center',
+            gap: '8px',
+            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+            padding: '6px 8px',
+            borderRadius: 'var(--radius-full)',
+            border: '1px solid var(--border-color)'
+          }} className="desktop-nav">
+            <button
+              onClick={() => onNavigate('events')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 18px',
+                borderRadius: 'var(--radius-full)',
+                background: currentRoute === 'events' ? 'var(--bg-tertiary)' : 'transparent',
+                color: currentRoute === 'events' ? '#fff' : 'var(--text-muted)',
+                fontWeight: 600,
+                fontSize: '14px',
+                border: currentRoute === 'events' ? '1px solid var(--border-glow)' : '1px solid transparent'
+              }}
+            >
+              <Compass size={16} />
+              Khám phá Sự kiện
+            </button>
+          </nav>
+        )}
 
         {/* User Profile / Login Action */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -194,6 +196,21 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
                   </span>
                 )}
 
+                {/* Badge số vé trong giỏ */}
+                {cart.length > 0 && (
+                  <span style={{
+                    fontSize: '11px',
+                    backgroundColor: 'var(--accent-cyan)',
+                    color: '#0a0d14',
+                    fontWeight: 800,
+                    borderRadius: '10px',
+                    padding: '1px 6px',
+                    marginLeft: '2px'
+                  }}>
+                    {cart.length}
+                  </span>
+                )}
+
                 <ChevronDown 
                   size={16} 
                   color="var(--text-muted)" 
@@ -207,16 +224,19 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
               {/* Dropdown Menu */}
               {dropdownOpen && (
                 <div 
-                  className="glass-panel animate-fade-in"
+                  className="animate-fade-in"
                   style={{
                     position: 'absolute',
                     top: 'calc(100% + 10px)',
                     right: 0,
-                    width: '240px',
+                    width: '250px',
                     borderRadius: 'var(--radius-lg)',
                     padding: '8px',
-                    boxShadow: '0 12px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(99, 102, 241, 0.2)',
-                    border: '1px solid var(--border-glow)',
+                    backgroundColor: 'rgba(8, 11, 20, 0.97)',
+                    backdropFilter: 'blur(24px)',
+                    WebkitBackdropFilter: 'blur(24px)',
+                    boxShadow: '0 16px 40px rgba(0, 0, 0, 0.8), 0 0 1px rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
                     zIndex: 100,
                     display: 'flex',
                     flexDirection: 'column',
@@ -276,7 +296,7 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
                   <button
                     onClick={() => {
                       setDropdownOpen(false);
-                      alert('Tính năng Giỏ hàng: Bạn chưa có vé nào trong hàng chờ thanh toán.');
+                      if (onOpenCart) onOpenCart();
                     }}
                     style={{
                       display: 'flex',
@@ -300,7 +320,14 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
                   >
                     <ShoppingCart size={17} color="var(--accent-cyan)" />
                     <div style={{ flex: 1 }}>
-                      <div>Giỏ hàng</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span>Giỏ hàng</span>
+                        {cart.length > 0 && (
+                          <span style={{ fontSize: '11px', backgroundColor: 'var(--accent-cyan)', color: '#000', fontWeight: 800, padding: '1px 6px', borderRadius: '10px' }}>
+                            {cart.length} vé
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: 500 }}>Vé đã chọn & thanh toán</div>
                     </div>
                   </button>
@@ -340,20 +367,23 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
               )}
             </div>
           ) : (
-            <button
-              onClick={() => onNavigate('login')}
-              className="glow-btn-primary"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                fontSize: '14px'
-              }}
-            >
-              <User size={16} />
-              Đăng nhập / Tài khoản
-            </button>
+            /* Ẩn nút đăng nhập ở góc khi người dùng đang ở chính trang login */
+            currentRoute !== 'login' && (
+              <button
+                onClick={() => onNavigate('login')}
+                className="glow-btn-primary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 20px',
+                  fontSize: '14px'
+                }}
+              >
+                <User size={16} />
+                Đăng nhập / Tài khoản
+              </button>
+            )
           )}
 
           {/* Mobile menu trigger */}
@@ -383,27 +413,29 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
           flexDirection: 'column',
           gap: '10px'
         }}>
-          <button
-            onClick={() => {
-              onNavigate('events');
-              setMobileMenuOpen(false);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '12px 16px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: currentRoute === 'events' ? 'var(--bg-tertiary)' : 'transparent',
-              color: '#fff',
-              fontSize: '14px',
-              fontWeight: 600,
-              textAlign: 'left'
-            }}
-          >
-            <Compass size={18} />
-            Khám phá Sự kiện
-          </button>
+          {currentRoute !== 'login' && (
+            <button
+              onClick={() => {
+                onNavigate('events');
+                setMobileMenuOpen(false);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '12px 16px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: currentRoute === 'events' ? 'var(--bg-tertiary)' : 'transparent',
+                color: '#fff',
+                fontSize: '14px',
+                fontWeight: 600,
+                textAlign: 'left'
+              }}
+            >
+              <Compass size={18} />
+              Khám phá Sự kiện
+            </button>
+          )}
 
           {isAdmin && (
             <button
@@ -433,7 +465,7 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
-                alert('Tính năng Giỏ hàng: Bạn chưa có vé nào trong hàng chờ thanh toán.');
+                if (onOpenCart) onOpenCart();
               }}
               style={{
                 display: 'flex',
@@ -449,7 +481,7 @@ export default function Navbar({ currentRoute, onNavigate, user, onLogout }) {
               }}
             >
               <ShoppingCart size={18} color="var(--accent-cyan)" />
-              Giỏ hàng
+              Giỏ hàng ({cart.length})
             </button>
           )}
         </div>

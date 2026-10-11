@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Navbar from './components/Navbar';
+import CartModal from './components/CartModal';
 import LoginPage from './pages/LoginPage';
 import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
@@ -12,6 +13,8 @@ export default function App() {
   const [eventsList, setEventsList] = useState(MOCK_EVENTS);
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [user, setUser] = useState(null);
+  const [cart, setCart] = useState([]); // Giỏ hàng: mảng các vé đã thanh toán thành công
+  const [isCartOpen, setIsCartOpen] = useState(false); // Quản lý mở modal giỏ hàng
 
   // Điều hướng
   const navigateTo = (route, eventId = null) => {
@@ -33,6 +36,49 @@ export default function App() {
 
   const handleLogout = () => {
     setUser(null);
+    setCart([]);
+  };
+
+  // Thêm vé vào giỏ hàng sau khi thanh toán thành công
+  const handleAddToCart = (ticketInfo) => {
+    setCart(prev => [...prev, ticketInfo]);
+  };
+
+  // Quản lý ghế đã bán theo từng sự kiện (persistent trong phiên làm việc)
+  const [occupiedSeatsByEvent, setOccupiedSeatsByEvent] = useState({
+    'ev-1': new Set(['A-3', 'A-4', 'B-5', 'C-1', 'C-2', 'D-7', 'E-4', 'F-5'])
+  });
+
+  // Quản lý số vé còn lại theo zone của từng sự kiện
+  const [zoneRemainingByEvent, setZoneRemainingByEvent] = useState(() => {
+    const map = {};
+    MOCK_EVENTS.forEach(ev => {
+      if (ev.zones) {
+        map[ev.id] = Object.fromEntries(ev.zones.map(z => [z.id, z.remaining]));
+      }
+    });
+    return map;
+  });
+
+  // Xử lý cập nhật ghế / vé khi thanh toán thành công
+  const handlePaymentSuccess = (eventId, eventType, selectedSeats, zoneQuantities) => {
+    if (eventType === 'seated') {
+      setOccupiedSeatsByEvent(prev => {
+        const currentSet = prev[eventId] ? new Set(prev[eventId]) : new Set();
+        selectedSeats.forEach(s => currentSet.add(s.code));
+        return { ...prev, [eventId]: currentSet };
+      });
+    } else {
+      setZoneRemainingByEvent(prev => {
+        const currentZones = prev[eventId] ? { ...prev[eventId] } : {};
+        Object.entries(zoneQuantities).forEach(([zId, qty]) => {
+          if (qty > 0) {
+            currentZones[zId] = Math.max(0, (currentZones[zId] || 0) - qty);
+          }
+        });
+        return { ...prev, [eventId]: currentZones };
+      });
+    }
   };
 
   // --- CRUD CHO ADMIN ---
@@ -55,13 +101,15 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
-      {/* Navigation Bar - Ẩn khi đang ở trang quản trị Admin vì đã có sidebar aside riêng */}
+      {/* Navigation Bar - Chỉ ẩn khi ở trang Admin (có sidebar riêng) */}
         {!(currentRoute === 'admin' && user && user.role === 'admin') && (
           <Navbar
             currentRoute={currentRoute}
             onNavigate={(route) => navigateTo(route)}
             user={user}
             onLogout={handleLogout}
+            cart={cart}
+            onOpenCart={() => setIsCartOpen(true)}
           />
         )}
 
@@ -85,8 +133,13 @@ export default function App() {
             <EventDetailPage
               event={currentEvent}
               user={user}
+              occupiedSeats={occupiedSeatsByEvent[currentEvent.id] || new Set()}
+              zoneRemaining={zoneRemainingByEvent[currentEvent.id] || {}}
+              onPaymentSuccess={handlePaymentSuccess}
               onBack={() => navigateTo('events')}
               onRequireLogin={() => navigateTo('login')}
+              onAddToCart={handleAddToCart}
+              onOpenCart={() => setIsCartOpen(true)}
             />
           )}
 
@@ -104,80 +157,46 @@ export default function App() {
               />
             ) : (
               <div style={{
-                maxWidth: '600px',
-                margin: '80px auto',
-                padding: '36px',
+                padding: '60px 24px',
                 textAlign: 'center',
-                backgroundColor: 'var(--bg-secondary)',
+                maxWidth: '500px',
+                margin: '100px auto',
                 borderRadius: 'var(--radius-xl)',
-                border: '1px solid var(--border-color)'
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)'
               }}>
-                <Shield size={48} color="var(--accent-pink)" style={{ marginBottom: '16px' }} />
-                <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '12px', color: '#fff' }}>
-                  Khu vực Quản trị Hệ thống
-                </h2>
-                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px', lineHeight: 1.6 }}>
-                  {!user
-                    ? 'Bạn cần đăng nhập tài khoản quản trị viên (Admin) để truy cập chức năng này.'
-                    : 'Tài khoản hiện tại của bạn không có quyền Quản trị viên (Admin). Vui lòng đăng nhập với tài khoản Admin.'}
+                <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#f87171', marginBottom: '8px' }}>
+                  Truy cập bị từ chối
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '20px' }}>
+                  Bạn cần đăng nhập bằng tài khoản Quản trị viên (Admin) để xem trang này.
                 </p>
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                  <button
-                    onClick={() => navigateTo('events')}
-                    style={{
-                      padding: '10px 20px',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                      color: '#fff',
-                      fontWeight: 600
-                    }}
-                  >
-                    Quay lại Trang chủ
-                  </button>
-                  {!user ? (
-                    <button
-                      onClick={() => navigateTo('login')}
-                      className="glow-btn-primary"
-                      style={{
-                        padding: '10px 20px',
-                        borderRadius: 'var(--radius-md)',
-                        color: '#fff',
-                        fontWeight: 600
-                      }}
-                    >
-                      Đăng nhập Admin
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setUser(prev => ({ ...prev, role: 'admin' }));
-                        alert('Đã cấp quyền Quản trị viên tạm thời cho tài khoản này!');
-                      }}
-                      style={{
-                        padding: '10px 20px',
-                        borderRadius: 'var(--radius-md)',
-                        backgroundColor: 'rgba(99, 102, 241, 0.2)',
-                        border: '1px solid var(--border-glow)',
-                        color: 'var(--primary-light)',
-                        fontWeight: 600
-                      }}
-                    >
-                      Kích hoạt quyền Admin (Demo)
-                    </button>
-                  )}
-                </div>
+                <button
+                  onClick={() => navigateTo('login')}
+                  className="glow-btn-primary"
+                  style={{ padding: '10px 24px' }}
+                >
+                  Đến trang Đăng nhập
+                </button>
               </div>
             )
           )}
         </main>
 
-        {/* Footer - ẩn khi ở dashboard admin để layout tràn viền chuẩn app */}
-        {currentRoute !== 'admin' && (
+        {/* Global Cart Modal - Làm mờ nền toàn màn hình, đặt ở root app */}
+        <CartModal
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          cart={cart}
+        />
+
+        {/* Global Footer (Chỉ hiển thị ngoài trang Admin) */}
+        {!(currentRoute === 'admin' && user && user.role === 'admin') && (
           <footer style={{
-            backgroundColor: '#07090e',
             borderTop: '1px solid var(--border-color)',
-            padding: '40px 24px 24px',
-            marginTop: '60px'
+            backgroundColor: 'rgba(10, 13, 20, 0.95)',
+            padding: '48px 24px 24px',
+            marginTop: 'auto'
           }}>
             <div style={{
               maxWidth: '1280px',
@@ -185,38 +204,39 @@ export default function App() {
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
               gap: '32px',
-              marginBottom: '32px'
+              marginBottom: '36px'
             }}>
               <div>
-                <div style={{ fontSize: '18px', fontWeight: 800, color: '#fff', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '18px', fontWeight: 800, color: '#fff', marginBottom: '14px' }}>
                   Ticket<span style={{ color: 'var(--accent-pink)' }}>Verse</span>
-                </div>
-                <p style={{ color: 'var(--text-dim)', fontSize: '13px', lineHeight: 1.6 }}>
-                  Nền tảng phân phối vé điện tử và quản lý đặt chỗ trực tuyến hàng đầu Việt Nam cho các concert, lễ hội và sự kiện lớn.
+                </h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6 }}>
+                  Nền tảng phân phối vé sự kiện và nhạc hội trực tuyến hàng đầu. Đảm bảo 100% vé chính hãng và trải nghiệm đặt vé mượt mà nhất.
                 </p>
               </div>
 
               <div>
-                <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '12px' }}>Tính năng đặt chỗ</h4>
+                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Khám phá</h5>
                 <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  <li>Sơ đồ ghế trực quan (Seated-based)</li>
-                  <li>Vé đứng khu vực (Zone-based)</li>
-                  <li>Bộ lọc mức giá tối thiểu dropdown gọn gàng</li>
-                  <li>Trang quản trị toàn diện CRUD sự kiện</li>
+                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Nhạc hội & Concert</li>
+                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Lễ hội âm nhạc EDM</li>
+                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Fan Meeting</li>
+                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Khu vực & Sơ đồ ghế</li>
                 </ul>
               </div>
 
               <div>
-                <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '12px' }}>Phương thức Đăng nhập</h4>
+                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Dành cho ban tổ chức</h5>
                 <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  <li>Google Single Sign-On</li>
-                  <li>Zalo Official Login</li>
-                  <li>Tài khoản Email & Mật khẩu bảo mật</li>
+                  <li>Hợp tác phân phối vé</li>
+                  <li>Giải pháp Check-in QR bảo mật</li>
+                  <li>Quản lý phân khu thời gian thực</li>
+                  <li>Báo cáo doanh thu & đối soát</li>
                 </ul>
               </div>
 
               <div>
-                <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '12px' }}>Hỗ trợ khách hàng</h4>
+                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Hỗ trợ khách hàng</h5>
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
                   <div>Hotline: 1900 6868 (8:00 - 22:00)</div>
                   <div>Email: support@ticketverse.vn</div>
