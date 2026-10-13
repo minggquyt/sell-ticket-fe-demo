@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
-import { 
-  Plus, 
-  Search, 
-  Edit3, 
-  Trash2, 
-  Armchair, 
-  Layers, 
-  Calendar, 
-  MapPin, 
-  DollarSign, 
-  Check, 
-  X, 
+import React, { useState, useEffect } from 'react';
+import { fetchAdminTickets } from '../services/eventService';
+import {
+  Plus,
+  Search,
+  Edit3,
+  Trash2,
+  Armchair,
+  Layers,
+  Calendar,
+  MapPin,
+  DollarSign,
+  Check,
+  X,
   AlertCircle,
   Tag,
   Eye,
@@ -27,81 +28,89 @@ import {
   User,
   Hash
 } from 'lucide-react';
-import { CATEGORIES } from '../data/events';
+import {
+  CATEGORIES,
+  formatEventDate,
+  isSeatedEvent,
+  getEventVenue,
+  getMinPrice,
+  getMaxPrice,
+  getSingleSeatTier
+} from '../data/events';
 
-// Dữ liệu mẫu danh sách vé đã đặt để quản lý vé
+// Dữ liệu mẫu danh sách vé đã đặt để quản lý vé (cập nhật theo 1 loại ghế cho Seated-based)
 const INITIAL_MOCK_TICKETS = [
   {
     ticketCode: 'TK-VN98231',
-    eventId: 'ev-1',
+    eventId: '22222222-2222-2222-2222-222222222221',
     customerName: 'Nguyễn Văn An',
     customerPhone: '0912 345 678',
-    ticketType: 'VIP Crown (Ghế A-12)',
+    ticketType: 'Ghế tiêu chuẩn (Ghế A-12)',
     purchaseDate: '10/10/2026 14:30',
-    price: 2500000,
+    price: 900000,
     status: 'paid' // paid | checked-in | cancelled
   },
   {
     ticketCode: 'TK-VN89211',
-    eventId: 'ev-1',
+    eventId: '22222222-2222-2222-2222-222222222221',
     customerName: 'Trần Thị Thu Hà',
     customerPhone: '0988 777 666',
-    ticketType: 'Gold Standard (Ghế C-04)',
+    ticketType: 'Ghế tiêu chuẩn (Ghế C-04)',
     purchaseDate: '09/10/2026 09:15',
-    price: 1800000,
+    price: 900000,
     status: 'paid'
   },
   {
     ticketCode: 'TK-VN66723',
-    eventId: 'ev-2',
+    eventId: '22222222-2222-2222-2222-222222222222',
     customerName: 'Lê Hoàng Nam',
     customerPhone: '0903 112 233',
     ticketType: 'Khu vực GA Standing (Zone-based)',
     purchaseDate: '08/10/2026 18:20',
-    price: 450000,
+    price: 650000,
     status: 'checked-in'
   },
   {
     ticketCode: 'TK-VN77812',
-    eventId: 'ev-3',
+    eventId: '22222222-2222-2222-2222-222222222223',
     customerName: 'Phạm Minh Đức',
     customerPhone: '0977 889 900',
-    ticketType: 'VIP Crown (Ghế B-08)',
+    ticketType: 'Ghế khán phòng Hòa Bình (Ghế B-08)',
     purchaseDate: '07/10/2026 11:00',
-    price: 1800000,
+    price: 750000,
     status: 'paid'
   },
   {
     ticketCode: 'TK-VN55410',
-    eventId: 'ev-4',
+    eventId: '22222222-2222-2222-2222-222222222224',
     customerName: 'Vũ Thùy Linh',
     customerPhone: '0934 556 778',
     ticketType: 'Khu vực VIP Lounge (Zone-based)',
     purchaseDate: '06/10/2026 20:45',
-    price: 1500000,
+    price: 2500000,
     status: 'cancelled'
   },
   {
     ticketCode: 'TK-VN99120',
-    eventId: 'ev-2',
+    eventId: '22222222-2222-2222-2222-222222222222',
     customerName: 'Hoàng Anh Tuấn',
     customerPhone: '0918 223 344',
     ticketType: 'Khu vực GA Standing (Zone-based)',
     purchaseDate: '05/10/2026 16:10',
-    price: 450000,
+    price: 650000,
     status: 'paid'
   }
 ];
 
-export default function AdminPage({ 
-  events, 
-  onAddEvent, 
-  onUpdateEvent, 
-  onDeleteEvent, 
+export default function AdminPage({
+  events,
+  onAddEvent,
+  onUpdateEvent,
+  onDeleteEvent,
   onViewEvent,
   onNavigate,
   user,
-  onLogout 
+  onLogout
 }) {
   // Tab điều hướng bên aside menu: 'events' (Quản lý sự kiện) | 'tickets' (Quản lý vé)
   const [activeTab, setActiveTab] = useState('events');
@@ -117,27 +126,55 @@ export default function AdminPage({
   const [ticketSearch, setTicketSearch] = useState('');
   const [ticketEventFilter, setTicketEventFilter] = useState('all');
   const [ticketStatusFilter, setTicketStatusFilter] = useState('all');
-  const [ticketsList, setTicketsList] = useState(INITIAL_MOCK_TICKETS);
+  const [ticketsList, setTicketsList] = useState([]);
+  const [isLoadingTickets, setIsLoadingTickets] = useState(false);
+
+  const loadTickets = async () => {
+    setIsLoadingTickets(true);
+    try {
+      const tickets = await fetchAdminTickets(user?.token);
+      if (tickets && Array.isArray(tickets)) {
+        setTicketsList(tickets);
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách vé quản trị:', err);
+    } finally {
+      setIsLoadingTickets(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTickets();
+  }, [user]);
 
   // Form State Sự kiện
   const initialForm = {
     title: '',
     category: 'Âm nhạc',
+    event_type: 'SEAT_BASED', // 'SEAT_BASED' | 'ZONE_BASED'
     type: 'seated', // 'seated' | 'zone'
     status: 'ongoing', // 'ongoing' | 'upcoming'
     date: '',
+    start_time: '',
     time: '19:30 - 22:30',
+    location: '',
     venue: '',
+    // Seated-based: chỉ có duy nhất 1 loại ghế
+    seatTierName: 'Ghế tiêu chuẩn',
+    seatPrice: 500000,
+    seatColor: '#6366f1',
+    // Giá tối thiểu & tối đa (cho Zone-based hoặc hiển thị chung)
+    min_price: '500000.00',
+    max_price: '500000.00',
     minPrice: 500000,
-    maxPrice: 2000000,
+    maxPrice: 500000,
     image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80',
     banner: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1600&q=80',
+    thumbnails: ['https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80'],
     organizer: '',
     description: '',
     seatTiers: [
-      { id: 'vip', name: 'VIP Crown', price: 2000000, color: '#ec4899', rows: ['A', 'B'] },
-      { id: 'gold', name: 'Gold Standard', price: 1200000, color: '#3b82f6', rows: ['C', 'D'] },
-      { id: 'silver', name: 'Silver Regular', price: 500000, color: '#10b981', rows: ['E', 'F'] }
+      { id: 'standard', name: 'Ghế tiêu chuẩn', price: 500000, color: '#6366f1', rows: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] }
     ],
     zones: [
       { id: 'z-ga', name: 'Khu vực GA Standing', price: 500000, description: 'Vé đứng tự do', remaining: 150, color: '#10b981' },
@@ -151,22 +188,31 @@ export default function AdminPage({
 
   // Lọc sự kiện
   const filteredEvents = events.filter(ev => {
+    const isSeated = isSeatedEvent(ev);
+    const evVenue = getEventVenue(ev);
     const matchSearch = ev.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        ev.venue.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchType = filterType === 'all' || ev.type === filterType;
+      evVenue.toLowerCase().includes(searchTerm.toLowerCase());
+    let matchType = true;
+    if (filterType === 'seated' || filterType === 'SEAT_BASED') {
+      matchType = isSeated;
+    } else if (filterType === 'zone' || filterType === 'ZONE_BASED') {
+      matchType = !isSeated;
+    }
     return matchSearch && matchType;
   });
 
   // Lọc vé theo tên người mua, mã vé, sự kiện và trạng thái
   const filteredTickets = ticketsList.filter(tk => {
     const ev = events.find(e => e.id === tk.eventId);
-    const eventTitle = ev ? ev.title.toLowerCase() : '';
+    const eventTitle = ev ? ev.title.toLowerCase() : (tk.eventTitle || '').toLowerCase();
     const query = ticketSearch.toLowerCase();
-    
-    const matchQuery = !ticketSearch || 
-      tk.ticketCode.toLowerCase().includes(query) ||
-      tk.customerName.toLowerCase().includes(query) ||
-      tk.customerPhone.toLowerCase().includes(query) ||
+
+    const matchQuery = !ticketSearch ||
+      (tk.ticketCode && tk.ticketCode.toLowerCase().includes(query)) ||
+      (tk.customerName && tk.customerName.toLowerCase().includes(query)) ||
+      (tk.customerPhone && tk.customerPhone.toLowerCase().includes(query)) ||
+      (tk.customerEmail && tk.customerEmail.toLowerCase().includes(query)) ||
+      (tk.seatNumber && tk.seatNumber.toLowerCase().includes(query)) ||
       eventTitle.includes(query);
 
     const matchEvent = ticketEventFilter === 'all' || tk.eventId === ticketEventFilter;
@@ -177,18 +223,49 @@ export default function AdminPage({
 
   const handleOpenAddModal = () => {
     setEditingEvent(null);
+    const today = new Date();
+    const formattedDate = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`;
     setFormData({
       ...initialForm,
-      date: new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      date: formattedDate,
+      start_time: today.toISOString()
     });
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (ev) => {
     setEditingEvent(ev);
+    const isSeated = isSeatedEvent(ev);
+    const singleTier = getSingleSeatTier(ev);
+    const evMinPrice = getMinPrice(ev);
+    const evMaxPrice = getMaxPrice(ev);
+    const evVenue = getEventVenue(ev);
+    const evDate = formatEventDate(ev) || ev.date || '';
+
     setFormData({
       ...ev,
-      seatTiers: ev.seatTiers || initialForm.seatTiers,
+      event_type: isSeated ? 'SEAT_BASED' : 'ZONE_BASED',
+      type: isSeated ? 'seated' : 'zone',
+      location: evVenue,
+      venue: evVenue,
+      date: evDate,
+      start_time: ev.start_time || new Date().toISOString(),
+      minPrice: evMinPrice,
+      maxPrice: evMaxPrice,
+      min_price: ev.min_price || `${evMinPrice.toFixed(2)}`,
+      max_price: ev.max_price || `${evMaxPrice.toFixed(2)}`,
+      seatTierName: singleTier.name || 'Ghế tiêu chuẩn',
+      seatPrice: singleTier.price || evMinPrice,
+      seatColor: singleTier.color || '#6366f1',
+      seatTiers: [
+        {
+          id: 'standard',
+          name: singleTier.name || 'Ghế tiêu chuẩn',
+          price: singleTier.price || evMinPrice,
+          color: singleTier.color || '#6366f1',
+          rows: ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        }
+      ],
       zones: ev.zones || initialForm.zones
     });
     setIsModalOpen(true);
@@ -196,21 +273,87 @@ export default function AdminPage({
 
   const handleSubmitForm = (e) => {
     e.preventDefault();
-    if (!formData.title || !formData.venue || !formData.date) {
+    const loc = formData.location || formData.venue;
+    if (!formData.title || !loc || !formData.date) {
       alert('Vui lòng điền đầy đủ Tên sự kiện, Địa điểm và Ngày diễn ra!');
       return;
     }
 
+    const isSeated = formData.event_type === 'SEAT_BASED' || formData.type === 'seated';
+    let payload;
+
+    if (isSeated) {
+      // Seated-based CHỈ CÓ 1 LOẠI GHẾ DUY NHẤT
+      const price = Number(formData.seatPrice || formData.minPrice || 500000);
+      const tierName = formData.seatTierName || 'Ghế tiêu chuẩn';
+      const tierColor = formData.seatColor || '#6366f1';
+      const singleTier = {
+        id: 'standard',
+        name: tierName,
+        price,
+        color: tierColor,
+        rows: ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+      };
+
+      payload = {
+        ...formData,
+        event_type: 'SEAT_BASED',
+        type: 'seated',
+        location: loc,
+        venue: loc,
+        min_price: `${price.toFixed(2)}`,
+        max_price: `${price.toFixed(2)}`,
+        minPrice: price,
+        maxPrice: price,
+        seatTiers: [singleTier],
+        thumbnails: formData.thumbnails || [formData.image],
+        highlights: formData.highlights || [
+          'Sơ đồ ghế đồng giá cho toàn bộ vị trí',
+          'Trải nghiệm âm thanh và ánh sáng chuẩn quốc tế',
+          'Check-in bằng mã vé điện tử QR nhanh chóng'
+        ],
+        rules: formData.rules || [
+          'Không mang thức ăn, nước uống từ bên ngoài.',
+          'Vui lòng có mặt trước giờ diễn 30 phút để làm thủ tục check-in.'
+        ]
+      };
+    } else {
+      const minP = Number(formData.minPrice || 500000);
+      const maxP = Number(formData.maxPrice || minP);
+
+      payload = {
+        ...formData,
+        event_type: 'ZONE_BASED',
+        type: 'zone',
+        location: loc,
+        venue: loc,
+        min_price: `${minP.toFixed(2)}`,
+        max_price: `${maxP.toFixed(2)}`,
+        minPrice: minP,
+        maxPrice: maxP,
+        thumbnails: formData.thumbnails || [formData.image],
+        highlights: formData.highlights || [
+          'Khu vực đứng tự do bùng nổ năng lượng',
+          'Hiệu ứng âm thanh và laser hiện đại'
+        ],
+        rules: formData.rules || [
+          'Không mang vật sắc nhọn, chất cấm vào sự kiện.',
+          'Vòng tay check-in không tháo rời trong sự kiện.'
+        ]
+      };
+    }
+
     if (editingEvent) {
       onUpdateEvent({
-        ...formData,
+        ...payload,
         id: editingEvent.id
       });
     } else {
-      const newId = `ev-${Date.now()}`;
+      const newId = `22222222-2222-2222-2222-${Date.now().toString().slice(-12)}`;
       onAddEvent({
-        ...formData,
-        id: newId
+        ...payload,
+        id: newId,
+        created_at: new Date().toISOString()
       });
     }
 
@@ -243,7 +386,7 @@ export default function AdminPage({
         zIndex: 40
       }}>
         {/* Trên cùng: Logo và Tên web */}
-        <div 
+        <div
           onClick={() => onNavigate && onNavigate('events')}
           style={{
             padding: '24px 20px',
@@ -370,43 +513,6 @@ export default function AdminPage({
               {ticketsList.length}
             </span>
           </button>
-
-          <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '12px 0' }} />
-
-          <div style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: 'var(--text-dim)',
-            textTransform: 'uppercase',
-            letterSpacing: '1px',
-            padding: '0 12px 6px'
-          }}>
-            Điều hướng công khai
-          </div>
-
-          <button
-            onClick={() => onNavigate && onNavigate('events')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 14px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'transparent',
-              color: 'var(--text-muted)',
-              border: '1px solid transparent',
-              fontWeight: 600,
-              fontSize: '14px',
-              textAlign: 'left',
-              cursor: 'pointer',
-              transition: 'var(--transition)'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-          >
-            <Compass size={19} color="var(--accent-cyan)" />
-            <span>Xem trang sự kiện</span>
-          </button>
         </div>
 
         {/* Góc dưới sidebar: Admin profile & Đăng xuất */}
@@ -420,9 +526,9 @@ export default function AdminPage({
           gap: '12px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-            <img 
-              src={user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'} 
-              alt="avatar" 
+            <img
+              src={user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'}
+              alt="avatar"
               style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-pink)' }}
             />
             <div style={{ overflow: 'hidden' }}>
@@ -566,8 +672,8 @@ export default function AdminPage({
                   }}
                 >
                   <option value="all">Tất cả ({events.length})</option>
-                  <option value="seated">Seated-based ({events.filter(e => e.type === 'seated').length})</option>
-                  <option value="zone">Zone-based ({events.filter(e => e.type === 'zone').length})</option>
+                  <option value="seated">Seated-based ({events.filter(e => isSeatedEvent(e)).length})</option>
+                  <option value="zone">Zone-based ({events.filter(e => !isSeatedEvent(e)).length})</option>
                 </select>
               </div>
             </div>
@@ -594,7 +700,6 @@ export default function AdminPage({
                     <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderBottom: '1px solid var(--border-color)' }}>
                       <th style={{ padding: '16px 20px', color: 'var(--text-dim)', fontWeight: 600, width: '320px' }}>SỰ KIỆN</th>
                       <th style={{ padding: '16px 20px', color: 'var(--text-dim)', fontWeight: 600, width: '150px' }}>LOẠI VÉ</th>
-                      <th style={{ padding: '16px 20px', color: 'var(--text-dim)', fontWeight: 600, width: '160px', whiteSpace: 'nowrap' }}>TRẠNG THÁI</th>
                       <th style={{ padding: '16px 20px', color: 'var(--text-dim)', fontWeight: 600, width: '220px' }}>NGÀY & ĐỊA ĐIỂM</th>
                       <th style={{ padding: '16px 20px', color: 'var(--text-dim)', fontWeight: 600, width: '180px' }}>GIÁ TỐI THIỂU</th>
                       <th style={{ padding: '16px 20px', color: 'var(--text-dim)', fontWeight: 600, textAlign: 'right', width: '140px' }}>THAO TÁC</th>
@@ -603,14 +708,14 @@ export default function AdminPage({
                   <tbody>
                     {filteredEvents.length === 0 ? (
                       <tr>
-                        <td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
+                        <td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
                           Không có sự kiện nào phù hợp với bộ lọc.
                         </td>
                       </tr>
                     ) : (
                       filteredEvents.map(ev => (
-                        <tr 
-                          key={ev.id} 
+                        <tr
+                          key={ev.id}
                           style={{ borderBottom: '1px solid var(--border-color)', transition: 'var(--transition)' }}
                           onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)'}
                           onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -642,51 +747,57 @@ export default function AdminPage({
 
                           {/* Loại vé badge */}
                           <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
-                            <span className={ev.type === 'seated' ? 'badge-type-seated' : 'badge-type-zone'} style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              padding: '4px 10px',
-                              borderRadius: 'var(--radius-full)',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              whiteSpace: 'nowrap'
-                            }}>
-                              {ev.type === 'seated' ? <Armchair size={13} /> : <Layers size={13} />}
-                              {ev.type === 'seated' ? 'Seated-based' : 'Zone-based'}
-                            </span>
-                          </td>
-
-                          {/* Trạng thái badge */}
-                          <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
-                            <span className={ev.status === 'ongoing' ? 'badge-status-ongoing' : 'badge-status-upcoming'} style={{
-                              padding: '5px 12px',
-                              borderRadius: 'var(--radius-full)',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              whiteSpace: 'nowrap',
-                              display: 'inline-block'
-                            }}>
-                              {ev.status === 'ongoing' ? 'Đang mở bán' : 'Sắp mở bán'}
-                            </span>
+                            {(() => {
+                              const isSeated = isSeatedEvent(ev);
+                              return (
+                                <span className={isSeated ? 'badge-type-seated' : 'badge-type-zone'} style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '4px 10px',
+                                  borderRadius: 'var(--radius-full)',
+                                  fontSize: '12px',
+                                  fontWeight: 600,
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {isSeated ? <Armchair size={13} /> : <Layers size={13} />}
+                                  {isSeated ? 'Seated-based' : 'Zone-based'}
+                                </span>
+                              );
+                            })()}
                           </td>
 
                           {/* Ngày & Địa điểm */}
                           <td style={{ padding: '16px 20px' }}>
-                            <div style={{ fontSize: '13px', color: '#fff', marginBottom: '2px' }}>{ev.date}</div>
+                            <div style={{ fontSize: '13px', color: '#fff', marginBottom: '2px' }}>
+                              {formatEventDate(ev)}
+                            </div>
                             <div style={{ fontSize: '12px', color: 'var(--text-dim)', maxWidth: '240px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {ev.venue}
+                              {getEventVenue(ev)}
                             </div>
                           </td>
 
                           {/* Giá vé */}
                           <td style={{ padding: '16px 20px' }}>
-                            <div style={{ fontWeight: 700, color: 'var(--accent-pink)' }}>
-                              {formatVND(ev.minPrice)}
-                            </div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
-                              đến {formatVND(ev.maxPrice || ev.minPrice)}
-                            </div>
+                            {isSeatedEvent(ev) ? (
+                              <div>
+                                <div style={{ fontWeight: 700, color: 'var(--accent-pink)' }}>
+                                  {formatVND(getMinPrice(ev))}
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--primary-light)' }}>
+                                  Đồng giá
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <div style={{ fontWeight: 700, color: 'var(--accent-pink)' }}>
+                                  {formatVND(getMinPrice(ev))}
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                                  đến {formatVND(getMaxPrice(ev))}
+                                </div>
+                              </div>
+                            )}
                           </td>
 
                           {/* Thao tác CRUD */}
@@ -777,19 +888,42 @@ export default function AdminPage({
                 </p>
               </div>
 
-              {/* Nút check-in nhanh demo */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                padding: '8px 16px',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '13px',
-                color: 'var(--text-muted)'
-              }}>
-                <CheckCircle2 size={16} color="var(--accent-emerald)" />
-                Tổng vé đã bán: <strong style={{ color: '#fff' }}>{ticketsList.length}</strong>
+              {/* Nút đếm và reload vé từ database */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  padding: '8px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '13px',
+                  color: 'var(--text-muted)'
+                }}>
+                  <CheckCircle2 size={16} color="var(--accent-emerald)" />
+                  Tổng vé đã bán: <strong style={{ color: '#fff' }}>{ticketsList.length}</strong>
+                </div>
+                <button
+                  onClick={loadTickets}
+                  disabled={isLoadingTickets}
+                  title="Tải lại danh sách vé từ Supabase"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'rgba(236, 72, 153, 0.15)',
+                    color: '#f472b6',
+                    border: '1px solid rgba(236, 72, 153, 0.3)',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600
+                  }}
+                >
+                  <RefreshCw size={14} className={isLoadingTickets ? 'spin' : ''} />
+                  {isLoadingTickets ? 'Đang đồng bộ...' : 'Làm mới'}
+                </button>
               </div>
             </div>
 
@@ -909,7 +1043,13 @@ export default function AdminPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTickets.length === 0 ? (
+                    {isLoadingTickets ? (
+                      <tr>
+                        <td colSpan="7" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
+                          Đang tải dữ liệu vé từ hệ thống database Supabase...
+                        </td>
+                      </tr>
+                    ) : filteredTickets.length === 0 ? (
                       <tr>
                         <td colSpan="7" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
                           Không tìm thấy vé nào phù hợp với điều kiện tìm kiếm.
@@ -919,8 +1059,8 @@ export default function AdminPage({
                       filteredTickets.map(tk => {
                         const targetEvent = events.find(e => e.id === tk.eventId);
                         return (
-                          <tr 
-                            key={tk.ticketCode}
+                          <tr
+                            key={tk.id || tk.ticketCode}
                             style={{ borderBottom: '1px solid var(--border-color)', transition: 'var(--transition)' }}
                             onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)'}
                             onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -943,17 +1083,17 @@ export default function AdminPage({
                             {/* Tên sự kiện */}
                             <td style={{ padding: '16px 20px' }}>
                               <div style={{ fontWeight: 600, color: '#fff', marginBottom: '2px' }}>
-                                {targetEvent ? targetEvent.title : 'Sự kiện hệ thống'}
+                                {targetEvent ? targetEvent.title : (tk.eventTitle || 'Sự kiện hệ thống')}
                               </div>
                               <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
-                                {targetEvent ? `${targetEvent.date} • ${targetEvent.venue}` : ''}
+                                {targetEvent ? `${targetEvent.date} • ${targetEvent.venue}` : (tk.purchaseDate || '')}
                               </div>
                             </td>
 
                             {/* Người mua */}
                             <td style={{ padding: '16px 20px' }}>
-                              <div style={{ fontWeight: 600, color: '#fff' }}>{tk.customerName}</div>
-                              <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{tk.customerPhone}</div>
+                              <div style={{ fontWeight: 600, color: '#fff' }}>{tk.customerName || 'Khách hàng'}</div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{tk.customerEmail || tk.customerPhone || 'N/A'}</div>
                             </td>
 
                             {/* Hạng vé / vị trí */}
@@ -1114,8 +1254,15 @@ export default function AdminPage({
                     Loại hình đặt vé *
                   </label>
                   <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    value={formData.event_type || (formData.type === 'seated' ? 'SEAT_BASED' : 'ZONE_BASED')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData({
+                        ...formData,
+                        event_type: val,
+                        type: val === 'SEAT_BASED' ? 'seated' : 'zone'
+                      });
+                    }}
                     style={{
                       width: '100%',
                       padding: '10px 14px',
@@ -1126,30 +1273,8 @@ export default function AdminPage({
                       fontSize: '14px'
                     }}
                   >
-                    <option value="seated">Seated-based (Chọn từng ghế, max 5 ghế)</option>
-                    <option value="zone">Zone-based (Chọn khu vực vé, max 5 vé)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Trạng thái mở bán *
-                  </label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      color: '#fff',
-                      fontSize: '14px'
-                    }}
-                  >
-                    <option value="ongoing">Đang mở bán vé</option>
-                    <option value="upcoming">Sắp mở bán</option>
+                    <option value="SEAT_BASED">Seated-based</option>
+                    <option value="ZONE_BASED">Zone-based (Khu vực đứng/vé mở, max 5 vé)</option>
                   </select>
                 </div>
               </div>
@@ -1205,7 +1330,7 @@ export default function AdminPage({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Ngày diễn ra *
+                    Ngày diễn ra (Date / Start Time) *
                   </label>
                   <input
                     type="text"
@@ -1227,14 +1352,14 @@ export default function AdminPage({
 
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Địa điểm tổ chức *
+                    Địa điểm tổ chức (Location) *
                   </label>
                   <input
                     type="text"
                     required
                     placeholder="VD: SECC Quận 7, TP.HCM"
-                    value={formData.venue}
-                    onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                    value={formData.location || formData.venue}
+                    onChange={(e) => setFormData({ ...formData, venue: e.target.value, location: e.target.value })}
                     style={{
                       width: '100%',
                       padding: '10px 14px',
@@ -1248,51 +1373,177 @@ export default function AdminPage({
                 </div>
               </div>
 
-              {/* Giá vé tối thiểu & tối đa */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Giá vé tối thiểu (VNĐ) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    step="50000"
-                    value={formData.minPrice}
-                    onChange={(e) => setFormData({ ...formData, minPrice: Number(e.target.value) })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      color: '#fff',
-                      fontSize: '14px'
-                    }}
-                  />
-                </div>
+              {/* Cấu hình giá: Phân tách Seated-based (1 loại ghế) vs Zone-based */}
+              {(formData.event_type === 'SEAT_BASED' || formData.type === 'seated') ? (
+                <div style={{
+                  padding: '18px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                  border: '1px solid rgba(99, 102, 241, 0.25)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Armchair size={18} color="var(--primary-light)" />
+                      <span style={{ fontSize: '14px', fontWeight: 700, color: '#fff' }}>
+                        Cấu hình Ghế ngồi (Seated-based)
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '3px 9px',
+                      borderRadius: 'var(--radius-full)',
+                      backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                      color: '#a5b4fc',
+                      border: '1px solid rgba(99, 102, 241, 0.35)'
+                    }}>
+                      Đồng giá toàn bộ khán phòng
+                    </span>
+                  </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Giá vé cao nhất (VNĐ)
-                  </label>
-                  <input
-                    type="number"
-                    step="50000"
-                    value={formData.maxPrice}
-                    onChange={(e) => setFormData({ ...formData, maxPrice: Number(e.target.value) })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      color: '#fff',
-                      fontSize: '14px'
-                    }}
-                  />
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                    💡 Sự kiện Seated-based áp dụng cho toàn bộ các hàng ghế (A đến G). Giá vé sẽ áp dụng đồng nhất cho mọi ghế ngồi.
+                  </p>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                        Tên loại ghế *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="VD: Ghế tiêu chuẩn"
+                        value={formData.seatTierName || 'Ghế tiêu chuẩn'}
+                        onChange={(e) => setFormData({ ...formData, seatTierName: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: 'var(--radius-md)',
+                          backgroundColor: 'var(--bg-secondary)',
+                          border: '1px solid var(--border-color)',
+                          color: '#fff',
+                          fontSize: '14px'
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                        Giá vé ghế ngồi (VNĐ) *
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        step="10000"
+                        placeholder="VD: 900000"
+                        value={formData.seatPrice || formData.minPrice || 500000}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFormData({
+                            ...formData,
+                            seatPrice: val,
+                            minPrice: val,
+                            maxPrice: val,
+                            min_price: `${val.toFixed(2)}`,
+                            max_price: `${val.toFixed(2)}`
+                          });
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: 'var(--radius-md)',
+                          backgroundColor: 'var(--bg-secondary)',
+                          border: '1px solid var(--border-color)',
+                          color: '#fff',
+                          fontSize: '14px'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                    fontSize: '12px'
+                  }}>
+                    <span style={{ color: 'var(--text-dim)' }}>
+                      Quy mô: <strong>56 ghế ngồi</strong> (7 hàng A-G, 8 ghế/hàng)
+                    </span>
+                    <span style={{ color: 'var(--accent-pink)', fontWeight: 700 }}>
+                      Giá bán: {formatVND(formData.seatPrice || formData.minPrice || 500000)} / vé
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* Giá vé tối thiểu & tối đa cho Zone-based */
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Giá vé tối thiểu (VNĐ) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      step="50000"
+                      value={formData.minPrice}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setFormData({
+                          ...formData,
+                          minPrice: val,
+                          min_price: `${val.toFixed(2)}`
+                        });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-color)',
+                        color: '#fff',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Giá vé cao nhất (VNĐ)
+                    </label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={formData.maxPrice}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setFormData({
+                          ...formData,
+                          maxPrice: val,
+                          max_price: `${val.toFixed(2)}`
+                        });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-color)',
+                        color: '#fff',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Ảnh URL */}
               <div>
