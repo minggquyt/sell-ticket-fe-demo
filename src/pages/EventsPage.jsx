@@ -17,13 +17,21 @@ import {
   ChevronUp,
   X
 } from 'lucide-react';
-import { CATEGORIES, CITIES } from '../data/events';
+import { 
+  CATEGORIES, 
+  CITIES, 
+  formatEventDate, 
+  formatEventTime,
+  isSeatedEvent, 
+  getEventVenue, 
+  getMinPrice,
+  isUpcomingEvent 
+} from '../data/events';
 
-export default function EventsPage({ events, onSelectEvent }) {
+export default function EventsPage({ events, onSelectEvent, isLoading = false }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Tất cả');
   const [selectedCity, setSelectedCity] = useState('Tất cả địa điểm');
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'ongoing' | 'upcoming'
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'seated' | 'zone'
   const [minPriceFilter, setMinPriceFilter] = useState(0); // Bộ lọc giá tối thiểu
   const [sortBy, setSortBy] = useState('default'); // 'default' | 'price-asc' | 'price-desc'
@@ -40,17 +48,20 @@ export default function EventsPage({ events, onSelectEvent }) {
     if (minPriceFilter > 0) count++;
     if (selectedCategory !== 'Tất cả') count++;
     if (selectedCity !== 'Tất cả địa điểm') count++;
-    if (statusFilter !== 'all') count++;
     if (typeFilter !== 'all') count++;
     return count;
-  }, [minPriceFilter, selectedCategory, selectedCity, statusFilter, typeFilter]);
+  }, [minPriceFilter, selectedCategory, selectedCity, typeFilter]);
 
   // Filtered & Sorted events
   const filteredEvents = useMemo(() => {
     return events.filter(ev => {
+      const isSeated = isSeatedEvent(ev);
+      const evVenue = getEventVenue(ev);
+      const evMinPrice = getMinPrice(ev);
+
       // Search
       const matchSearch = ev.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ev.venue.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        evVenue.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ev.category.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchSearch) return false;
 
@@ -58,30 +69,29 @@ export default function EventsPage({ events, onSelectEvent }) {
       if (selectedCategory !== 'Tất cả' && ev.category !== selectedCategory) return false;
 
       // City
-      if (selectedCity !== 'Tất cả địa điểm' && !ev.venue.includes(selectedCity)) return false;
-
-      // Status
-      if (statusFilter !== 'all' && ev.status !== statusFilter) return false;
+      if (selectedCity !== 'Tất cả địa điểm' && !evVenue.includes(selectedCity)) return false;
 
       // Type (Seated / Zone)
-      if (typeFilter !== 'all' && ev.type !== typeFilter) return false;
+      if (typeFilter === 'seated' && !isSeated) return false;
+      if (typeFilter === 'zone' && isSeated) return false;
 
       // Min Price Filter
-      if (minPriceFilter > 0 && ev.minPrice < minPriceFilter) return false;
+      if (minPriceFilter > 0 && evMinPrice < minPriceFilter) return false;
 
       return true;
     }).sort((a, b) => {
-      if (sortBy === 'price-asc') return a.minPrice - b.minPrice;
-      if (sortBy === 'price-desc') return b.minPrice - a.minPrice;
+      const aPrice = getMinPrice(a);
+      const bPrice = getMinPrice(b);
+      if (sortBy === 'price-asc') return aPrice - bPrice;
+      if (sortBy === 'price-desc') return bPrice - aPrice;
       return 0;
     });
-  }, [events, searchQuery, selectedCategory, selectedCity, statusFilter, typeFilter, minPriceFilter, sortBy]);
+  }, [events, searchQuery, selectedCategory, selectedCity, typeFilter, minPriceFilter, sortBy]);
 
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedCategory('Tất cả');
     setSelectedCity('Tất cả địa điểm');
-    setStatusFilter('all');
     setTypeFilter('all');
     setMinPriceFilter(0);
     setSortBy('default');
@@ -228,7 +238,7 @@ export default function EventsPage({ events, onSelectEvent }) {
         </div>
 
         {/* Thông tin số lượng & Sắp xếp */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             Tìm thấy <strong style={{ color: 'var(--primary-light)' }}>{filteredEvents.length}</strong> sự kiện
           </span>
@@ -372,36 +382,7 @@ export default function EventsPage({ events, onSelectEvent }) {
               </div>
             </div>
 
-            {/* 3. Trạng thái diễn ra: Đang mở bán vs Sắp có */}
-            <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: '#fff' }}>
-                Thời gian mở bán
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {[
-                  { id: 'all', label: 'Tất cả trạng thái' },
-                  { id: 'ongoing', label: 'Đang mở bán vé' },
-                  { id: 'upcoming', label: 'Sắp mở bán' }
-                ].map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => setStatusFilter(item.id)}
-                    style={{
-                      padding: '7px 10px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '12px',
-                      fontWeight: statusFilter === item.id ? 600 : 400,
-                      backgroundColor: statusFilter === item.id ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                      color: statusFilter === item.id ? 'var(--primary-light)' : 'var(--text-muted)',
-                      border: statusFilter === item.id ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid transparent',
-                      textAlign: 'left'
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+
 
             {/* 4. Thể loại & Địa điểm */}
             <div>
@@ -450,7 +431,23 @@ export default function EventsPage({ events, onSelectEvent }) {
       )}
 
       {/* EVENT LISTING GRID */}
-      {filteredEvents.length === 0 ? (
+      {isLoading ? (
+        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+          <div style={{
+            display: 'inline-block',
+            animation: 'spin 1s linear infinite',
+            border: '3px solid rgba(255,255,255,0.1)',
+            borderTopColor: 'var(--primary-light)',
+            borderRadius: '50%',
+            width: '36px',
+            height: '36px',
+            marginBottom: '16px'
+          }} />
+          <div style={{ color: 'var(--text-muted)', fontSize: '15px' }}>
+            Đang tải danh sách sự kiện...
+          </div>
+        </div>
+      ) : filteredEvents.length === 0 ? (
         <div className="glass-panel" style={{
           padding: '60px 20px',
           textAlign: 'center',
@@ -517,25 +514,25 @@ export default function EventsPage({ events, onSelectEvent }) {
                   background: 'linear-gradient(to top, rgba(10, 13, 20, 0.9) 0%, transparent 60%)'
                 }} />
 
-                {/* Status Badge */}
-                <div style={{
-                  position: 'absolute',
-                  top: '12px',
-                  left: '12px',
-                  display: 'flex',
-                  gap: '8px'
-                }}>
-                  <span className={event.status === 'ongoing' ? 'badge-status-ongoing' : 'badge-status-upcoming'} style={{
-                    padding: '4px 10px',
-                    borderRadius: 'var(--radius-full)',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+
+
+                {/* Status Badge (Upcoming) */}
+                {isUpcomingEvent(event) && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '12px',
+                    left: '12px'
                   }}>
-                    {event.status === 'ongoing' ? '● Đang mở bán' : '🔒 Sắp mở bán'}
-                  </span>
-                </div>
+                    <span className="badge-status-upcoming" style={{
+                      padding: '4px 10px',
+                      borderRadius: 'var(--radius-full)',
+                      fontSize: '11px',
+                      fontWeight: 700
+                    }}>
+                      Sắp diễn ra
+                    </span>
+                  </div>
+                )}
 
                 {/* Type Badge */}
                 <div style={{
@@ -543,18 +540,24 @@ export default function EventsPage({ events, onSelectEvent }) {
                   top: '12px',
                   right: '12px'
                 }}>
-                  <span className={event.type === 'seated' ? 'badge-type-seated' : 'badge-type-zone'} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '4px 10px',
-                    borderRadius: 'var(--radius-full)',
-                    fontSize: '11px',
-                    fontWeight: 600
-                  }}>
-                    {event.type === 'seated' ? <Armchair size={12} /> : <Layers size={12} />}
-                    {event.type === 'seated' ? 'Seated-based' : 'Zone-based'}
-                  </span>
+                  {(() => {
+                    const isSeated = isSeatedEvent(event);
+                    return (
+                      <span className={isSeated ? 'badge-type-seated' : 'badge-type-zone'} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '5px 12px',
+                        borderRadius: 'var(--radius-full)',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        letterSpacing: '0.3px'
+                      }}>
+                        {isSeated ? <Armchair size={13} /> : <Layers size={13} />}
+                        {isSeated ? 'Seated-based' : 'Zone-based'}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {/* Category */}
@@ -562,11 +565,14 @@ export default function EventsPage({ events, onSelectEvent }) {
                   position: 'absolute',
                   bottom: '12px',
                   left: '12px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
+                  backgroundColor: 'rgba(10, 13, 20, 0.92)',
+                  backdropFilter: 'blur(8px)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
                   fontSize: '11px',
-                  color: 'var(--text-muted)'
+                  fontWeight: 600,
+                  color: '#fff'
                 }}>
                   {event.category}
                 </div>
@@ -592,7 +598,7 @@ export default function EventsPage({ events, onSelectEvent }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Calendar size={15} color="var(--primary-light)" />
-                      <span>{event.date} • {event.time}</span>
+                      <span>{formatEventDate(event)} • {formatEventTime(event) || event.time}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <MapPin size={15} color="var(--accent-pink)" />
@@ -600,7 +606,7 @@ export default function EventsPage({ events, onSelectEvent }) {
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis'
-                      }}>{event.venue}</span>
+                      }}>{getEventVenue(event)}</span>
                     </div>
                   </div>
                 </div>
@@ -614,14 +620,16 @@ export default function EventsPage({ events, onSelectEvent }) {
                   justifyContent: 'space-between'
                 }}>
                   <div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Giá chỉ từ</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+                      {isSeatedEvent(event) ? 'Đồng giá' : 'Giá chỉ từ'}
+                    </div>
                     <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--accent-pink)' }}>
-                      {formatVND(event.minPrice)}
+                      {formatVND(getMinPrice(event))}
                     </div>
                   </div>
 
                   <button
-                    className={event.type === 'seated' ? 'glow-btn-primary' : 'glow-btn-pink'}
+                    className={isSeatedEvent(event) ? 'glow-btn-primary' : 'glow-btn-pink'}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -631,7 +639,7 @@ export default function EventsPage({ events, onSelectEvent }) {
                       borderRadius: 'var(--radius-md)'
                     }}
                   >
-                    Đặt vé ngay
+                    {isUpcomingEvent(event) ? 'Xem chi tiết' : 'Đặt vé ngay'}
                     <ChevronRight size={16} />
                   </button>
                 </div>

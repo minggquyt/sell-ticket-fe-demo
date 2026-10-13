@@ -1,42 +1,183 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import CartModal from './components/CartModal';
 import LoginPage from './pages/LoginPage';
 import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
 import AdminPage from './pages/AdminPage';
-import { MOCK_EVENTS } from './data/events';
-import { Heart, Globe, Shield, HelpCircle } from 'lucide-react';
+import { 
+  fetchEvents, 
+  fetchSeatsByEvent, 
+  createEventOnBackend, 
+  deleteEventOnBackend 
+} from './services/eventService';
+import { Heart, Globe, Shield, HelpCircle, Loader2 } from 'lucide-react';
 
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState('events'); // 'login' | 'events' | 'detail' | 'admin'
-  const [eventsList, setEventsList] = useState(MOCK_EVENTS);
+  const [eventsList, setEventsList] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [user, setUser] = useState(null);
   const [cart, setCart] = useState([]); // Giỏ hàng: mảng các vé đã thanh toán thành công
   const [isCartOpen, setIsCartOpen] = useState(false); // Quản lý mở modal giỏ hàng
 
-  // Điều hướng
+  // Quản lý ghế đã bán theo từng sự kiện (persistent trong phiên làm việc)
+  const [occupiedSeatsByEvent, setOccupiedSeatsByEvent] = useState({});
+
+  // Quản lý số vé còn lại theo zone của từng sự kiện
+  const [zoneRemainingByEvent, setZoneRemainingByEvent] = useState({});
+
+  const isAdminLoggedIn = Boolean(user && (user.role === 'admin' || user.role === 'ADMIN'));
+
+  // Khôi phục phiên đăng nhập từ localStorage
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem('sellticket_user');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        setUser(parsed);
+        if (parsed && (parsed.role === 'admin' || parsed.role === 'ADMIN')) {
+          setCurrentRoute('admin');
+          if (window.location.pathname !== '/admin') {
+            window.history.replaceState({}, '', '/admin');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Lỗi đọc user từ localStorage:', e);
+    }
+  }, []);
+
+  // Nếu user là Admin, luôn khóa chặt ở trang /admin
+  useEffect(() => {
+    if (isAdminLoggedIn) {
+      if (currentRoute !== 'admin') {
+        setCurrentRoute('admin');
+      }
+      if (window.location.pathname !== '/admin') {
+        window.history.replaceState({}, '', '/admin');
+      }
+    }
+  }, [isAdminLoggedIn, currentRoute]);
+
+  // Đồng bộ route theo URL trình duyệt (chuẩn route BE quy định)
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const path = window.location.pathname;
+      if (user && (user.role === 'admin' || user.role === 'ADMIN')) {
+        setCurrentRoute('admin');
+        if (path !== '/admin') {
+          window.history.replaceState({}, '', '/admin');
+        }
+        return;
+      }
+      if (path === '/login') {
+        setCurrentRoute('login');
+      } else if (path === '/admin') {
+        setCurrentRoute('admin');
+      } else if (path.startsWith('/events/')) {
+        const id = path.replace('/events/', '').split('/')[0];
+        if (id) {
+          setSelectedEventId(id);
+          setCurrentRoute('detail');
+        } else {
+          setCurrentRoute('events');
+        }
+      } else {
+        setCurrentRoute('events');
+      }
+    };
+
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, [user]);
+
+  // Tải danh sách sự kiện từ Backend
+  const loadEvents = useCallback(async (isSilent = false) => {
+    if (!isSilent) setIsLoadingEvents(true);
+    try {
+      const data = await fetchEvents();
+      if (data && data.length > 0) {
+        setEventsList(data);
+        const map = {};
+        data.forEach(ev => {
+          if (ev.zones) {
+            map[ev.id] = Object.fromEntries(ev.zones.map(z => [z.id, z.available || z.remaining || 50]));
+          }
+        });
+        setZoneRemainingByEvent(prev => ({ ...map, ...prev }));
+      } else {
+        setEventsList([]);
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải sự kiện từ Backend:', err);
+    } finally {
+      if (!isSilent) setIsLoadingEvents(false);
+    }
+  }, []);
+
+  // Tự động kiểm tra và đồng bộ lại định kỳ mỗi 10 giây (ngầm, không nháy màn hình)
+  useEffect(() => {
+    loadEvents(false);
+    const interval = setInterval(() => {
+      loadEvents(true);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [loadEvents]);
+
+  // Điều hướng chuyển trang và cập nhật URL trình duyệt
   const navigateTo = (route, eventId = null) => {
+    if (isAdminLoggedIn) {
+      setCurrentRoute('admin');
+      if (window.location.pathname !== '/admin') {
+        window.history.pushState({}, '', '/admin');
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     setCurrentRoute(route);
-    if (eventId) {
+    let targetPath = '/events';
+    if (route === 'login') {
+      targetPath = '/login';
+    } else if (route === 'admin') {
+      targetPath = '/admin';
+    } else if (route === 'detail' && eventId) {
       setSelectedEventId(eventId);
+      targetPath = `/events/${eventId}`;
+    } else if (route === 'events') {
+      targetPath = '/events';
+    }
+
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleLoginSuccess = (userData) => {
     setUser(userData);
-    if (selectedEventId) {
-      setCurrentRoute('detail');
+    localStorage.setItem('sellticket_user', JSON.stringify(userData));
+    if (userData && (userData.role === 'admin' || userData.role === 'ADMIN')) {
+      setCurrentRoute('admin');
+      if (window.location.pathname !== '/admin') {
+        window.history.pushState({}, '', '/admin');
+      }
+    } else if (selectedEventId) {
+      navigateTo('detail', selectedEventId);
     } else {
-      setCurrentRoute('events');
+      navigateTo('events');
     }
   };
 
   const handleLogout = () => {
     setUser(null);
+    localStorage.removeItem('sellticket_user');
     setCart([]);
+    setCurrentRoute('events');
+    window.history.pushState({}, '', '/events');
   };
 
   // Thêm vé vào giỏ hàng sau khi thanh toán thành công
@@ -44,25 +185,10 @@ export default function App() {
     setCart(prev => [...prev, ticketInfo]);
   };
 
-  // Quản lý ghế đã bán theo từng sự kiện (persistent trong phiên làm việc)
-  const [occupiedSeatsByEvent, setOccupiedSeatsByEvent] = useState({
-    'ev-1': new Set(['A-3', 'A-4', 'B-5', 'C-1', 'C-2', 'D-7', 'E-4', 'F-5'])
-  });
-
-  // Quản lý số vé còn lại theo zone của từng sự kiện
-  const [zoneRemainingByEvent, setZoneRemainingByEvent] = useState(() => {
-    const map = {};
-    MOCK_EVENTS.forEach(ev => {
-      if (ev.zones) {
-        map[ev.id] = Object.fromEntries(ev.zones.map(z => [z.id, z.remaining]));
-      }
-    });
-    return map;
-  });
-
   // Xử lý cập nhật ghế / vé khi thanh toán thành công
   const handlePaymentSuccess = (eventId, eventType, selectedSeats, zoneQuantities) => {
-    if (eventType === 'seated') {
+    const isSeated = eventType === 'SEAT_BASED' || eventType === 'seated';
+    if (isSeated) {
       setOccupiedSeatsByEvent(prev => {
         const currentSet = prev[eventId] ? new Set(prev[eventId]) : new Set();
         selectedSeats.forEach(s => currentSet.add(s.code));
@@ -81,10 +207,41 @@ export default function App() {
     }
   };
 
+  // Đồng bộ trạng thái ghế đã bán từ Backend khi người dùng xem sự kiện
+  useEffect(() => {
+    if (!selectedEventId) return;
+    fetchSeatsByEvent(selectedEventId).then(seats => {
+      if (seats && seats.length > 0) {
+        const soldOrReserved = seats
+          .filter(s => s.status === 'SOLD' || s.status === 'RESERVED')
+          .map(s => {
+            const num = s.seat_number;
+            if (/^[A-G]\d+$/.test(num)) {
+              return `${num.charAt(0)}-${num.slice(1)}`;
+            }
+            return num;
+          });
+        if (soldOrReserved.length > 0) {
+          setOccupiedSeatsByEvent(prev => ({
+            ...prev,
+            [selectedEventId]: new Set([...(prev[selectedEventId] || []), ...soldOrReserved])
+          }));
+        }
+      }
+    }).catch(err => console.warn('Không thể đồng bộ ghế từ Backend:', err));
+  }, [selectedEventId]);
+
   // --- CRUD CHO ADMIN ---
-  const handleAddEvent = (newEvent) => {
-    setEventsList(prev => [newEvent, ...prev]);
-    alert('Thêm sự kiện mới thành công!');
+  const handleAddEvent = async (newEvent) => {
+    try {
+      const created = await createEventOnBackend(newEvent, user?.token);
+      setEventsList(prev => [created, ...prev]);
+      alert('Thêm sự kiện mới thành công lên hệ thống Backend!');
+    } catch (err) {
+      console.error(err);
+      setEventsList(prev => [newEvent, ...prev]);
+      alert('Đã thêm sự kiện: ' + err.message);
+    }
   };
 
   const handleUpdateEvent = (updatedEvent) => {
@@ -92,44 +249,70 @@ export default function App() {
     alert('Cập nhật thông tin sự kiện thành công!');
   };
 
-  const handleDeleteEvent = (id) => {
-    setEventsList(prev => prev.filter(e => e.id !== id));
-    alert('Đã xóa sự kiện khỏi hệ thống!');
+  const handleDeleteEvent = async (id) => {
+    try {
+      await deleteEventOnBackend(id, user?.token);
+      setEventsList(prev => prev.filter(e => e.id !== id));
+      alert('Đã xóa sự kiện thành công khỏi hệ thống Backend!');
+    } catch (err) {
+      console.error(err);
+      setEventsList(prev => prev.filter(e => e.id !== id));
+      alert('Đã xóa sự kiện: ' + err.message);
+    }
   };
 
-  const currentEvent = eventsList.find(e => e.id === selectedEventId) || eventsList[0];
+  const currentEvent = eventsList.find(e => e.id === selectedEventId) || (eventsList.length > 0 ? eventsList[0] : null);
 
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
-      {/* Navigation Bar - Chỉ ẩn khi ở trang Admin (có sidebar riêng) */}
-        {!(currentRoute === 'admin' && user && user.role === 'admin') && (
-          <Navbar
-            currentRoute={currentRoute}
-            onNavigate={(route) => navigateTo(route)}
+  // NẾU TÀI KHOẢN ADMIN ĐÃ ĐĂNG NHẬP: CHỈ HIỂN THỊ TRANG QUẢN TRỊ DUY NHẤT
+  if (isAdminLoggedIn) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
+        <main style={{ flex: 1 }}>
+          <AdminPage
+            events={eventsList}
+            onAddEvent={handleAddEvent}
+            onUpdateEvent={handleUpdateEvent}
+            onDeleteEvent={handleDeleteEvent}
             user={user}
             onLogout={handleLogout}
-            cart={cart}
-            onOpenCart={() => setIsCartOpen(true)}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  // GIAO DIỆN DÀNH CHO KHÁCH HÀNG / NGƯỜI DÙNG THƯỜNG
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
+      {/* Navigation Bar */}
+      <Navbar
+        currentRoute={currentRoute}
+        onNavigate={(route) => navigateTo(route)}
+        user={user}
+        onLogout={handleLogout}
+        cart={cart}
+        onOpenCart={() => setIsCartOpen(true)}
+      />
+
+      {/* Main View Router */}
+      <main style={{ flex: 1 }}>
+        {currentRoute === 'login' && (
+          <LoginPage
+            onLoginSuccess={handleLoginSuccess}
+            onNavigate={(route) => navigateTo(route)}
           />
         )}
 
-        {/* Main View Router */}
-        <main style={{ flex: 1 }}>
-          {currentRoute === 'login' && (
-            <LoginPage
-              onLoginSuccess={handleLoginSuccess}
-              onNavigate={(route) => navigateTo(route)}
-            />
-          )}
+        {currentRoute === 'events' && (
+          <EventsPage
+            events={eventsList}
+            isLoading={isLoadingEvents}
+            onSelectEvent={(event) => navigateTo('detail', event.id)}
+          />
+        )}
 
-          {currentRoute === 'events' && (
-            <EventsPage
-              events={eventsList}
-              onSelectEvent={(event) => navigateTo('detail', event.id)}
-            />
-          )}
-
-          {currentRoute === 'detail' && (
+        {currentRoute === 'detail' && (
+          currentEvent ? (
             <EventDetailPage
               event={currentEvent}
               user={user}
@@ -141,46 +324,50 @@ export default function App() {
               onAddToCart={handleAddToCart}
               onOpenCart={() => setIsCartOpen(true)}
             />
-          )}
-
-          {currentRoute === 'admin' && (
-            user && user.role === 'admin' ? (
-              <AdminPage
-                events={eventsList}
-                onAddEvent={handleAddEvent}
-                onUpdateEvent={handleUpdateEvent}
-                onDeleteEvent={handleDeleteEvent}
-                onViewEvent={(event) => navigateTo('detail', event.id)}
-                onNavigate={(route) => navigateTo(route)}
-                user={user}
-                onLogout={handleLogout}
-              />
-            ) : (
+          ) : (
+            <div style={{ textAlign: 'center', padding: '120px 24px' }}>
               <div style={{
-                padding: '60px 24px',
-                textAlign: 'center',
-                maxWidth: '500px',
-                margin: '100px auto',
-                borderRadius: 'var(--radius-xl)',
-                backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                border: '1px solid rgba(239, 68, 68, 0.25)'
-              }}>
-                <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#f87171', marginBottom: '8px' }}>
-                  Truy cập bị từ chối
-                </h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '20px' }}>
-                  Bạn cần đăng nhập bằng tài khoản Quản trị viên (Admin) để xem trang này.
-                </p>
-                <button
-                  onClick={() => navigateTo('login')}
-                  className="glow-btn-primary"
-                  style={{ padding: '10px 24px' }}
-                >
-                  Đến trang Đăng nhập
-                </button>
+                display: 'inline-block',
+                animation: 'spin 1s linear infinite',
+                border: '3px solid rgba(255,255,255,0.1)',
+                borderTopColor: 'var(--primary-light)',
+                borderRadius: '50%',
+                width: '36px',
+                height: '36px',
+                marginBottom: '16px'
+              }} />
+              <div style={{ color: 'var(--text-muted)', fontSize: '15px' }}>
+                {isLoadingEvents ? 'Đang tải thông tin sự kiện...' : 'Không tìm thấy sự kiện.'}
               </div>
-            )
-          )}
+            </div>
+          )
+        )}
+
+        {currentRoute === 'admin' && (
+          <div style={{
+            padding: '60px 24px',
+            textAlign: 'center',
+            maxWidth: '500px',
+            margin: '100px auto',
+            borderRadius: 'var(--radius-xl)',
+            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.25)'
+          }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#f87171', marginBottom: '8px' }}>
+              Truy cập bị từ chối
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '20px' }}>
+              Bạn cần đăng nhập bằng tài khoản Quản trị viên (Admin) để xem trang này.
+            </p>
+            <button
+              onClick={() => navigateTo('login')}
+              className="glow-btn-primary"
+              style={{ padding: '10px 24px' }}
+            >
+              Đến trang Đăng nhập
+            </button>
+          </div>
+        )}
         </main>
 
         {/* Global Cart Modal - Làm mờ nền toàn màn hình, đặt ở root app */}

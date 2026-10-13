@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, User, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle } from 'lucide-react';
+import { loginUser, registerUser } from '../services/eventService';
 
 export default function LoginPage({ onLoginSuccess, onNavigate }) {
   const [mode, setMode] = useState('login'); // 'login' | 'register'
@@ -9,7 +10,7 @@ export default function LoginPage({ onLoginSuccess, onNavigate }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleEmailSubmit = (e) => {
+  const handleEmailSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -23,44 +24,29 @@ export default function LoginPage({ onLoginSuccess, onNavigate }) {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      const isAdminAccount = email.toLowerCase().includes('admin') || password.toLowerCase() === 'admin123';
+    try {
+      if (mode === 'register') {
+        await registerUser(email, password, fullName);
+      }
+      const loginRes = await loginUser(email, password);
+      const userData = loginRes.user;
+      const role = (userData.role || '').toLowerCase();
       onLoginSuccess({
-        id: 'usr_' + Date.now(),
-        name: fullName || (isAdminAccount ? 'Quản trị viên Hệ thống' : email.split('@')[0]),
-        email: email,
-        role: isAdminAccount ? 'admin' : 'user',
+        id: userData.id,
+        name: userData.fullName || fullName || email.split('@')[0],
+        email: userData.email,
+        role: role === 'admin' ? 'admin' : 'user',
+        token: loginRes.token,
         authProvider: 'Email',
-        avatar: isAdminAccount
+        avatar: role === 'admin'
           ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
           : `https://api.dicebear.com/7.x/identicon/svg?seed=${email}`
       });
-    }, 700);
-  };
-
-  const handleSocialLogin = (provider) => {
-    setLoading(true);
-    setTimeout(() => {
+    } catch (err) {
+      setError(err.message || 'Đăng nhập không thành công. Vui lòng thử lại.');
+    } finally {
       setLoading(false);
-      let dummyName = provider === 'Google' ? 'Alex Nguyễn' : 'Minh Quân';
-      let dummyEmail = provider === 'Google' ? 'alex.nguyen@gmail.com' : 'minhquan@zalo.me';
-      let avatar = provider === 'Google'
-        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
-        : 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&q=80';
-
-      // Test giao diện: Đăng nhập Zalo là Admin, các đăng nhập khác là user
-      const isZaloAdmin = provider === 'Zalo';
-
-      onLoginSuccess({
-        id: 'usr_' + provider.toLowerCase() + '_' + Date.now(),
-        name: dummyName,
-        email: dummyEmail,
-        role: isZaloAdmin ? 'admin' : 'user',
-        authProvider: provider,
-        avatar: avatar
-      });
-    }, 600);
+    }
   };
 
   return (
@@ -120,105 +106,14 @@ export default function LoginPage({ onLoginSuccess, onNavigate }) {
             marginBottom: '12px',
             border: '1px solid rgba(99, 102, 241, 0.25)'
           }}>
-            <ShieldCheck size={14} /> Hệ thống bán vé bảo mật
+            <ShieldCheck size={14} /> Hệ thống xác thực Supabase bảo mật
           </div>
           <h2 style={{ fontSize: '26px', fontWeight: 800, marginBottom: '6px', color: '#fff' }}>
-            {mode === 'login' ? 'Chào mừng trở lại' : 'Tạo tài khoản mới'}
+            {mode === 'login' ? 'Đăng nhập tài khoản' : 'Tạo tài khoản mới'}
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
-            {mode === 'login' ? 'Đăng nhập để đặt vé và quản lý chỗ ngồi của bạn' : 'Tham gia cùng hàng triệu khán giả yêu âm nhạc & sự kiện'}
+            {mode === 'login' ? 'Đăng nhập bằng Email & Mật khẩu để tiếp tục' : 'Đăng ký tài khoản mới để đặt vé & quản lý sự kiện'}
           </p>
-        </div>
-
-        {/* Social Login Buttons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          {/* Google Button */}
-          <button
-            type="button"
-            onClick={() => handleSocialLogin('Google')}
-            disabled={loading}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px',
-              padding: '12px 18px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: '#fff',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'var(--transition)'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
-            Đăng nhập bằng Google
-          </button>
-
-          {/* Zalo Button */}
-          <button
-            type="button"
-            onClick={() => handleSocialLogin('Zalo')}
-            disabled={loading}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px',
-              padding: '12px 18px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: '#0068FF',
-              color: '#ffffff',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(0, 104, 255, 0.3)'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#0055d4'}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#0068FF'}
-          >
-            <div style={{
-              width: '22px',
-              height: '22px',
-              backgroundColor: '#ffffff',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#0068FF',
-              fontWeight: 900,
-              fontSize: '13px',
-              letterSpacing: '-1px'
-            }}>
-              Z
-            </div>
-            Đăng nhập bằng Zalo
-          </button>
-        </div>
-
-        {/* Divider */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          margin: '20px 0',
-          color: 'var(--text-dim)',
-          fontSize: '13px'
-        }}>
-          <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
-          <span>Hoặc tiếp tục với Email</span>
-          <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
         </div>
 
         {/* Error Alert */}
