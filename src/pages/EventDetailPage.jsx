@@ -22,7 +22,7 @@ import {
   formatEventTime,
   isSeatedEvent,
   getEventVenue,
-  getSingleSeatTier,
+  getSingleSeatTier,  
   isUpcomingEvent
 } from '../data/events';
 import { fetchSeatsByEvent, holdSeats, holdZones, startCheckout } from '../services/eventService';
@@ -91,23 +91,24 @@ export default function EventDetailPage({
   // Đồng bộ trực tiếp danh sách ghế từ Backend
   useEffect(() => {
     if (!event?.id) return;
-    fetchSeatsByEvent(event.id).then(seats => {
-      if (seats && seats.length > 0) {
-        setBackendSeats(seats);
-        const sold = seats
-          .filter(s => s.status === 'SOLD' || s.status === 'RESERVED' || s.status === 'PAYMENT_PROCESSING')
-          .map(s => {
-            const num = s.seat_number;
-            if (/^[A-G]\d+$/.test(num)) {
-              return `${num.charAt(0)}-${num.slice(1)}`;
-            }
-            return num;
-          });
-        if (sold.length > 0) {
-          setOccupiedSeats(prev => new Set([...prev, ...sold]));
+    fetchSeatsByEvent(event.id)
+      .then(seats => {
+        if (seats && seats.length > 0) {
+          setBackendSeats(seats);
+          const sold = seats
+            .filter(s => s.status === 'SOLD' || s.status === 'RESERVED' || s.status === 'PAYMENT_PROCESSING')
+            .map(s => {
+              const num = s.seat_number;
+              if (/^[A-G]\d+$/.test(num)) {
+                return `${num.charAt(0)}-${num.slice(1)}`;
+              }
+              return num;
+            });
+          if (sold.length > 0) {
+            setOccupiedSeats(prev => new Set([...prev, ...sold]));
+          }
         }
-      }
-    }).catch(err => console.warn('Seats fetch error:', err));
+      }).catch(err => console.warn('Seats fetch error:', err));
   }, [event?.id]);
 
   // Kiểm tra nếu được redirect về từ PayOS thành công
@@ -137,14 +138,91 @@ export default function EventDetailPage({
     }
   }, [event?.id, event?.title, event?.event_type, event?.type, eventDate, eventTime, eventVenue, isSeated, onAddToCart, onPaymentSuccess, selectedSeats, zoneQuantities]);
 
+  // Format schema ghế từ BE 
+  const [groupedSeats, setGroupedSeats] = useState({});
+
+  useEffect(() => {
+    if (!backendSeats || backendSeats.length === 0) return;
+
+    // Thuật toán nhóm các ghế theo hàng (Ví dụ: "A1" -> Hàng "A", Ghế số "1")
+    const formattedRows = backendSeats.reduce((acc, seat) => {
+      // Tách phần chữ cái (hàng) và phần số (cột/số ghế) từ seat_number (VD: "A12" -> hàng "A", số "12")
+      const match = seat.seat_number.match(/^([A-Za-z]+)(\d+)?$/);
+      if (!match) return acc;
+
+      const rowName = match[1].toUpperCase(); // Lấy chữ cái làm tên hàng (VD: 'A', 'B')
+      const colNumber = parseInt(match[2], 10); // Lấy phần số
+
+      if (!acc[rowName]) {
+        acc[rowName] = [];
+      }
+
+      // Đẩy toàn bộ object ghế vào mảng của hàng tương ứng để tận dụng luôn thông tin id, status từ BE
+      acc[rowName].push({
+        ...seat,
+        colNumber
+      });
+
+      return acc;
+    }, {});
+
+    // Sắp xếp các số ghế trong từng hàng tăng dần (1, 2, 3, ...)
+    Object.keys(formattedRows).forEach(row => {
+      formattedRows[row].sort((a, b) => a.colNumber - b.colNumber);
+    });
+
+    // Lưu vào state để render giao diện
+    setGroupedSeats(formattedRows);
+  }, [backendSeats]);
+
+  // Trạng thái quản lý việc đã giữ ghế thành công hay chưa
+  const [isReserved, setIsReserved] = useState(false);
+
+  // Thời điểm hết hạn giữ ghế (lấy từ trường reserved_until của server trả về)
+  const [reservedUntilTime, setReservedUntilTime] = useState(null);
+
+  // Số giây còn lại để đếm ngược hiển thị lên giao diện
+  const [countdownSeconds, setCountdownSeconds] = useState(0);
+
   // Trạng thái xử lý thanh toán
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  useEffect(() => {
+    if (!reservedUntilTime) return;
+
+    const interval = setInterval(() => {
+      const now = new Date().getTime();
+      const expiryTime = new Date(reservedUntilTime).getTime();
+      const distance = Math.max(0, Math.floor((expiryTime - now) / 1000));
+
+      setCountdownSeconds(distance);
+
+      if (distance <= 0) {
+        clearInterval(interval);
+        // Hết thời gian giữ ghế: reset lại trạng thái để người dùng chọn lại
+        setIsReserved(false);
+        setReservedUntilTime(null);
+        alert('⏰ Thời gian giữ ghế đã hết. Vui lòng thực hiện lại!');
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [reservedUntilTime]);
+
+  // Hàm format giây thành dạng MM:SS để hiển thị cho đẹp
+  const formatCountdown = (totalSeconds) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   // Format currency
   const formatVND = (val) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
 
   // --- LOGIC SEATED-BASED ---
-  const handleToggleSeat = (seatCode, tier = singleSeatTier) => {
+  const handleToggleSeat = (seat, tier = singleSeatTier) => {
+    const seatId = seat.id;
+    const seatCode = seat.seat_number;
     if (occupiedSeats.has(seatCode)) return;
     const isAlreadySelected = selectedSeats.some(s => s.code === seatCode);
     if (isAlreadySelected) {
@@ -155,17 +233,21 @@ export default function EventDetailPage({
         return;
       }
       const match = backendSeats.find(bs => bs.seat_number === seatCode || bs.seat_number === seatCode.replace('-', ''));
+
       setSelectedSeats(prev => [...prev, {
         id: match?.id,
         code: seatCode,
         tier: tier.name || singleSeatTier.name,
-        price: tier.price || singleSeatTier.price,
+        price: seat.price,
         color: tier.color || singleSeatTier.color
       }]);
     }
   };
 
-  const totalSeatedPrice = selectedSeats.reduce((acc, curr) => acc + curr.price, 0);
+  const totalSeatedPrice = selectedSeats.reduce((acc, curr) => {
+    return acc + parseFloat(curr.price)
+  }, 0);
+
 
   // --- LOGIC ZONE-BASED ---
   const totalZoneCount = Object.values(zoneQuantities).reduce((acc, val) => acc + (val || 0), 0);
@@ -196,72 +278,96 @@ export default function EventDetailPage({
   const totalPrice = isSeated ? totalSeatedPrice : totalZonePrice;
   const hasSelections = isSeated ? selectedSeats.length > 0 : totalZoneCount > 0;
 
-  // Đặt và giữ chỗ + kết nối thanh toán PayOS
-  const handleBookAndPay = async () => {
+  // --- XỬ LÝ GIỮ GHẾ ---
+  const handleReserveSeats = async () => {
     if (!user) {
       if (onRequireLogin) onRequireLogin();
-      else alert('Vui lòng đăng nhập để tiếp tục thanh toán!');
+      else alert('Vui lòng đăng nhập để tiếp tục!');
       return;
     }
     if (!hasSelections) {
-      alert('Vui lòng chọn vé trước khi tiến hành đặt chỗ!');
+      alert('Vui lòng chọn vé trước khi tiến hành giữ chỗ!');
       return;
     }
 
     try {
-      setIsProcessingPayment(true);
       const token = localStorage.getItem('token') || user?.token;
-
       let seatIdsToCheckout = [];
 
       if (isSeated) {
-        // Lấy danh sách seat id
+        // seated - based
         seatIdsToCheckout = selectedSeats.map(s => s.id).filter(Boolean);
         if (seatIdsToCheckout.length === 0) {
-          // Nếu chưa có id trực tiếp từ backendSeats, fallback tìm theo seat_number
           seatIdsToCheckout = selectedSeats.map(s => {
             const found = backendSeats.find(bs => bs.seat_number === s.code || bs.seat_number === s.code.replace('-', ''));
             return found?.id;
           }).filter(Boolean);
         }
-
         if (seatIdsToCheckout.length === 0) {
-          throw new Error('Không tìm thấy thông tin ghế trên hệ thống backend. Vui lòng tải lại trang.');
+          throw new Error('Không tìm thấy thông tin ghế trên hệ thống backend.');
         }
 
-        // Gọi API giữ chỗ
         const holdRes = await holdSeats(seatIdsToCheckout, token);
         if (holdRes && holdRes.success === false) {
           throw new Error(holdRes.message || 'Không thể giữ các ghế đã chọn');
         }
-        if (holdRes?.data?.seatIds && holdRes.data.seatIds.length > 0) {
-          seatIdsToCheckout = holdRes.data.seatIds;
+
+        // Nhận response thành công từ server chứa reserved_until
+        const expiry = holdRes?.data?.reserved_until || holdRes?.reserved_until;
+        if (expiry) {
+          setReservedUntilTime(expiry);
+          setIsReserved(true); // Đánh dấu đã giữ ghế thành công
+        } else {
+          throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
         }
+
       } else {
-        // Zone-based: gọi API giữ chỗ theo zones
+
+        // Zone-based
         const selections = Object.entries(zoneQuantities)
           .filter(([, qty]) => qty > 0)
           .map(([zoneId, qty]) => {
             const zoneObj = event.zones?.find(z => z.id === zoneId);
-            return { zoneName: zoneObj?.name || zoneId, quantity: qty };
+            console.log(zoneObj)
+            return { zone_name: zoneObj?.id.toUpperCase() || zoneId, quantity: qty };
           });
 
+          console.log(selections)
+
+
         const holdRes = await holdZones(event.id, selections, token);
+        console.log(holdRes)
         if (holdRes && holdRes.success === false) {
+          
           throw new Error(holdRes.message || 'Không thể giữ chỗ theo khu vực đã chọn');
         }
-        const returnedIds = holdRes?.data?.seatIds || holdRes?.data?.seats?.map(s => s.id) || holdRes?.seatIds || holdRes?.seats?.map(s => s.id);
-        if (returnedIds && returnedIds.length > 0) {
-          seatIdsToCheckout = returnedIds;
+
+        const expiry = holdRes?.data?.reserved_until || holdRes?.reserved_until;
+        if (expiry) {
+          setReservedUntilTime(expiry);
+          setIsReserved(true);
         } else {
-          throw new Error('Không nhận được danh sách vé giữ chỗ từ hệ thống.');
+          throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
         }
       }
+    } catch (err) {
+      console.error('Lỗi giữ ghế:', err);
+      alert('⚠️ ' + (err.response?.data?.message || err.message || 'Có lỗi xảy ra khi giữ ghế!'));
+    }
+  };
 
-      // Tạo link thanh toán PayOS
+  // --- XỬ LÝ THANH TOÁN QUA PAYOS ---
+  const handlePayment = async () => {
+    try {
+      setIsProcessingPayment(true);
+      const token = localStorage.getItem('token') || user?.token;
+
+      let seatIdsToCheckout = selectedSeats.map(s => s.id).filter(Boolean);
+
       const returnUrl = `${window.location.origin}/events/${event.id}?status=success`;
       const cancelUrl = `${window.location.origin}/events/${event.id}?status=cancelled`;
 
+      // Gọi API PayOS (startCheckout)
       const checkoutRes = await startCheckout(seatIdsToCheckout, returnUrl, cancelUrl, token);
 
       if (checkoutRes && checkoutRes.success === false) {
@@ -271,12 +377,12 @@ export default function EventDetailPage({
       const checkoutUrl = checkoutRes?.data?.checkoutUrl || checkoutRes?.checkoutUrl;
 
       if (checkoutUrl) {
-        window.location.href = checkoutUrl;
+        window.location.href = checkoutUrl; // Chuyển hướng sang trang PayOS
       } else {
         throw new Error(checkoutRes?.message || 'Không nhận được đường dẫn thanh toán từ PayOS');
       }
     } catch (err) {
-      console.error('Lỗi đặt vé và thanh toán:', err);
+      console.error('Lỗi thanh toán:', err);
       alert('⚠️ ' + (err.response?.data?.message || err.message || 'Có lỗi xảy ra khi tạo giao dịch thanh toán!'));
       setIsProcessingPayment(false);
     }
@@ -527,8 +633,8 @@ export default function EventDetailPage({
                   {isUpcoming
                     ? 'Sự kiện sắp diễn ra - Hệ thống chưa mở bán vé chính thức.'
                     : (isSeated
-                        ? `Chế độ Seated-based: Sự kiện áp dụng đồng giá 1 loại ghế duy nhất (${formatVND(singleSeatTier.price)}). Tối đa 5 ghế.`
-                        : 'Chế độ Zone-based: Đặt vé theo khu vực đứng/vé mở (Tối đa 5 vé).')}
+                      ? `Chế độ Seated-based: Sự kiện áp dụng đồng giá 1 loại ghế duy nhất (${formatVND(singleSeatTier.price)}). Tối đa 5 ghế.`
+                      : 'Chế độ Zone-based: Đặt vé theo khu vực đứng/vé mở (Tối đa 5 vé).')}
                 </span>
               </div>
             </div>
@@ -580,52 +686,76 @@ export default function EventDetailPage({
 
                 <div style={{ overflowX: 'auto', paddingBottom: '16px' }}>
                   <div style={{ minWidth: '500px', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
-                    {['A', 'B', 'C', 'D', 'E', 'F', 'G'].map(row => {
-                      return (
-                        <div key={row} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ width: '24px', fontWeight: 700, color: 'var(--text-dim)', textAlign: 'center', fontSize: '13px' }}>{row}</span>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            {[1, 2, 3, 4, 5, 6, 7, 8].map(col => {
-                              const seatCode = `${row}-${col}`;
-                              // Khi sự kiện chưa mở bán: tô xám toàn bộ ghế
-                              const isOccupied = isUpcoming || occupiedSeats.has(seatCode);
-                              const isSelected = !isUpcoming && selectedSeats.some(s => s.code === seatCode);
-                              let bg = singleSeatTier.color;
-                              let cursor = 'pointer';
-                              let opacity = 1;
-                              if (isOccupied) { bg = '#334155'; cursor = 'not-allowed'; opacity = 0.5; }
-                              else if (isSelected) { bg = 'var(--accent-pink)'; }
-                              return (
-                                <button
-                                  key={seatCode}
-                                  onClick={() => handleToggleSeat(seatCode, singleSeatTier)}
-                                  disabled={isOccupied}
-                                  title={isUpcoming ? `Ghế ${seatCode} (Sự kiện chưa mở bán)` : (isOccupied ? `Ghế ${seatCode} đã có người mua` : `Ghế ${seatCode} - ${singleSeatTier.name} (${formatVND(singleSeatTier.price)})`)}
-                                  style={{
-                                    width: '36px', height: '36px', borderRadius: '8px',
-                                    backgroundColor: bg, color: '#fff', fontSize: '11px', fontWeight: 700,
-                                    cursor, opacity,
-                                    border: isSelected ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
-                                    transform: isSelected ? 'scale(1.1)' : 'scale(1)',
-                                    boxShadow: isSelected ? '0 0 12px var(--accent-pink)' : 'none',
-                                    transition: 'all 0.15s ease'
-                                  }}
-                                >
-                                  {col}
-                                </button>
-                              );
-                            })}
+                    {
+                      // Duyệt qua các tên hàng được sinh ra tự động từ dữ liệu BE (VD: ['A', 'B', 'C'])
+                      Object.keys(groupedSeats).sort().map(row => {
+                        const rowSeats = groupedSeats[row]; // Mảng các ghế trong hàng này
+                        return (
+                          <div key={row} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {/* Ký hiệu hàng bên trái */}
+                            <span style={{ width: '24px', fontWeight: 700, color: 'var(--text-dim)', textAlign: 'center', fontSize: '13px' }}>{row}</span>
+
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              {
+                                rowSeats.map(seat => {
+                                  // Lấy trực tiếp id và seat_number từ object ghế của BE trả về
+                                  const seatId = seat.id;
+                                  const seatCode = seat.seat_number; // VD: "A1", "A10"
+
+                                  // Kiểm tra trạng thái dựa trên dữ liệu thật từ BE
+                                  const isOccupied = isUpcoming || seat.status === 'SOLD' || occupiedSeats.has(seatId);
+                                  const isSelected = !isUpcoming && selectedSeats.some(s => s.id === seatId);
+
+                                  let bg = singleSeatTier.color;
+                                  let cursor = 'pointer';
+                                  let opacity = 1;
+
+                                  if (isOccupied) {
+                                    bg = '#334155';
+                                    cursor = 'not-allowed';
+                                    opacity = 0.5;
+                                  } else if (isSelected) {
+                                    bg = 'var(--accent-pink)';
+                                  }
+
+                                  return (
+                                    <button
+                                      key={seatId}
+                                      // Truyền trực tiếp seatId hoặc object seat lên hàm xử lý ở FE để map với BE
+                                      onClick={() => handleToggleSeat(seat, singleSeatTier)}
+                                      disabled={isOccupied}
+                                      title={isUpcoming ? `Ghế ${seatCode} (Sự kiện chưa mở bán)` : (isOccupied ? `Ghế ${seatCode} đã có người mua` : `Ghế ${seatCode}\n${singleSeatTier.name} (${formatVND(seat.price)})`)}
+                                      style={{
+                                        width: '36px', height: '36px', borderRadius: '8px',
+                                        backgroundColor: bg, color: '#fff', fontSize: '11px', fontWeight: 700,
+                                        cursor, opacity,
+                                        border: isSelected ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
+                                        transform: isSelected ? 'scale(1.1)' : 'scale(1)',
+                                        boxShadow: isSelected ? '0 0 12px var(--accent-pink)' : 'none',
+                                        transition: 'all 0.15s ease'
+                                      }}
+                                    >
+                                      {/* Hiển thị số thứ tự ghế bên trong nút (VD: 1, 2, 10, 11) */}
+                                      {seatCode}
+                                    </button>
+                                  );
+                                })
+                              }
+                            </div>
+
+                            {/* Ký hiệu hàng bên phải (tùy chọn) */}
+                            <span style={{ width: '24px', fontWeight: 700, color: 'var(--text-dim)', textAlign: 'center', fontSize: '13px' }}>{row}</span>
                           </div>
-                          <span style={{ width: '24px', fontWeight: 700, color: 'var(--text-dim)', textAlign: 'center', fontSize: '13px' }}>{row}</span>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    }
                   </div>
                 </div>
 
                 <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12px', color: 'var(--text-dim)' }}>
                   * Nhấp chuột vào ghế trống để chọn hoặc bỏ chọn. Sự kiện áp dụng đồng giá <strong>{formatVND(singleSeatTier.price)}</strong> cho toàn bộ 56 ghế. Tối đa 5 ghế cho mỗi khách hàng.
                 </div>
+
               </div>
             )}
 
@@ -637,6 +767,7 @@ export default function EventDetailPage({
                 </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {event.zones?.map(zone => {
+                    console.log(zone)
                     const qty = zoneQuantities[zone.id] || 0;
                     return (
                       <div
@@ -730,7 +861,8 @@ export default function EventDetailPage({
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                    {selectedSeats.map(seat => (
+                    {selectedSeats.map(seat => {
+                      return (
                       <div key={seat.code} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'var(--bg-secondary)', fontSize: '13px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontWeight: 800, color: 'var(--accent-pink)' }}>{seat.code}</span>
@@ -738,7 +870,8 @@ export default function EventDetailPage({
                         </div>
                         <span style={{ fontWeight: 700 }}>{formatVND(seat.price)}</span>
                       </div>
-                    ))}
+                    )
+                    })}
                   </div>
                 )}
               </div>
@@ -782,35 +915,46 @@ export default function EventDetailPage({
                 <span>Bạn cần đăng nhập để hoàn tất giữ chỗ và nhận vé qua email.</span>
               </div>
             )}
-
-              <button
-                onClick={handleBookAndPay}
-                disabled={!hasSelections || isProcessingPayment || isUpcoming}
-                className="glow-btn-pink"
-                style={{
-                  width: '100%', padding: '14px', fontSize: '15px', fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  opacity: (!hasSelections || isProcessingPayment || isUpcoming) ? 0.6 : 1,
-                  cursor: (!hasSelections || isProcessingPayment || isUpcoming) ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {isProcessingPayment ? (
-                  <>
-                    <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', width: '18px', height: '18px' }} />
-                    Đang kết nối PayOS...
-                  </>
-                ) : isUpcoming ? (
-                  <>
-                    <AlertTriangle size={18} />
-                    Sự kiện chưa mở bán
-                  </>
-                ) : (
-                  <>
+            <button
+              onClick={isReserved ? handlePayment : handleReserveSeats}
+              disabled={!hasSelections || isProcessingPayment || isUpcoming}
+              className="glow-btn-pink"
+              style={{
+                width: '100%', padding: '14px', fontSize: '15px', fontWeight: 700,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                opacity: (!hasSelections || isProcessingPayment || isUpcoming) ? 0.6 : 1,
+                cursor: (!hasSelections || isProcessingPayment || isUpcoming) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isProcessingPayment ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', width: '18px', height: '18px' }} />
+                  Đang kết nối PayOS...
+                </div>
+              ) : isUpcoming ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AlertTriangle size={18} />
+                  Sự kiện chưa mở bán
+                </div>
+              ) : isReserved ? (
+                // TRẠNG THÁI 2: ĐÃ GIỮ GHẾ -> HIỂN THỊ NÚT THANH TOÁN VÀ ĐỒNG HỒ ĐẾM NGƯỢC
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <CreditCard size={18} />
-                    {user ? `Đặt và giữ chỗ (PayOS) • ${formatVND(totalPrice)}` : 'Đăng nhập & Tiếp tục'}
-                  </>
-                )}
-              </button>
+                    {user ? `Thanh toán qua PayOS • ${formatVND(totalPrice)}` : 'Đăng nhập & Thanh toán'}
+                  </div>
+                  <span style={{ fontSize: '12px', color: '#ffeb3b', fontWeight: 500 }}>
+                    ⏱️ Giữ ghế thành công! Hết hạn sau: {formatCountdown(countdownSeconds)}
+                  </span>
+                </div>
+              ) : (
+                // TRẠNG THÁI 1: CHƯA GIỮ GHẾ -> HIỂN THỊ NÚT GIỮ GHẾ
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CreditCard size={18} />
+                  {user ? 'Giữ chỗ ngay' : 'Đăng nhập & Giữ chỗ'}
+                </div>
+              )}
+            </button>
           </div>
         </div>
       )}
