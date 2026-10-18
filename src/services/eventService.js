@@ -208,9 +208,6 @@ export async function holdSeats(seatIds, token) {
   return res.json();
 }
 
-/**
- * Giữ vé theo Zone (Route: POST /api/seats/reserve-zone)
- */
 export async function holdZones(eventId, zones, token) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
