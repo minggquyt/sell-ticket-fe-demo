@@ -178,6 +178,9 @@ export default function EventDetailPage({
   // Trạng thái quản lý việc đã giữ ghế thành công hay chưa
   const [isReserved, setIsReserved] = useState(false);
 
+  // Danh sách ID ghế đã giữ thành công từ Backend (dùng cho cả SEAT_BASED và ZONE_BASED khi thanh toán)
+  const [reservedSeatIds, setReservedSeatIds] = useState([]);
+
   // Thời điểm hết hạn giữ ghế (lấy từ trường reserved_until của server trả về)
   const [reservedUntilTime, setReservedUntilTime] = useState(null);
 
@@ -202,6 +205,7 @@ export default function EventDetailPage({
         // Hết thời gian giữ ghế: reset lại trạng thái để người dùng chọn lại
         setIsReserved(false);
         setReservedUntilTime(null);
+        setReservedSeatIds([]);
         alert('⏰ Thời gian giữ ghế đã hết. Vui lòng thực hiện lại!');
       }
     }, 1000);
@@ -315,6 +319,7 @@ export default function EventDetailPage({
         // Nhận response thành công từ server chứa reserved_until
         const expiry = holdRes?.data?.reserved_until || holdRes?.reserved_until;
         if (expiry) {
+          setReservedSeatIds(holdRes?.data?.seatIds || seatIdsToCheckout);
           setReservedUntilTime(expiry);
           setIsReserved(true); // Đánh dấu đã giữ ghế thành công
         } else {
@@ -344,6 +349,7 @@ export default function EventDetailPage({
 
         const expiry = holdRes?.data?.reserved_until || holdRes?.reserved_until;
         if (expiry) {
+          setReservedSeatIds(holdRes?.data?.seatIds || []);
           setReservedUntilTime(expiry);
           setIsReserved(true);
         } else {
@@ -362,7 +368,7 @@ export default function EventDetailPage({
       setIsProcessingPayment(true);
       const token = localStorage.getItem('token') || user?.token;
 
-      let seatIdsToCheckout = selectedSeats.map(s => s.id).filter(Boolean);
+      let seatIdsToCheckout = reservedSeatIds.length > 0 ? reservedSeatIds : selectedSeats.map(s => s.id).filter(Boolean);
 
       const returnUrl = `${window.location.origin}/events/${event.id}?status=success`;
       const cancelUrl = `${window.location.origin}/events/${event.id}?status=cancelled`;
