@@ -98,15 +98,15 @@ export default function EventsPage({ events, onSelectEvent, isLoading = false })
   };
 
   return (
-    <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px' }}>
+    <div style={{ maxWidth: '1280px', margin: '0 auto', padding: 'clamp(16px, 3.5vw, 32px) clamp(12px, 3vw, 24px)' }}>
       
       {/* Hero Banner Section */}
       <div style={{
         position: 'relative',
         borderRadius: 'var(--radius-xl)',
         overflow: 'hidden',
-        marginBottom: '36px',
-        padding: '48px 36px',
+        marginBottom: 'clamp(20px, 3.5vw, 36px)',
+        padding: 'clamp(24px, 5vw, 44px) clamp(16px, 4vw, 36px)',
         background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(236, 72, 153, 0.15) 100%), #101623',
         border: '1px solid var(--border-color)',
         boxShadow: 'var(--shadow-subtle)'
@@ -116,21 +116,21 @@ export default function EventsPage({ events, onSelectEvent, isLoading = false })
             display: 'inline-flex',
             alignItems: 'center',
             gap: '8px',
-            padding: '6px 14px',
+            padding: '5px 12px',
             borderRadius: 'var(--radius-full)',
             backgroundColor: 'rgba(236, 72, 153, 0.18)',
             color: '#f472b6',
-            fontSize: '13px',
+            fontSize: 'clamp(11px, 2.2vw, 13px)',
             fontWeight: 700,
-            marginBottom: '16px',
+            marginBottom: '14px',
             border: '1px solid rgba(236, 72, 153, 0.3)'
           }}>
-            <Sparkles size={16} /> Vé Chính Hãng - Chọn Chỗ Thời Gian Thực
+            <Sparkles size={15} /> Vé Chính Hãng - Chọn Chỗ Thời Gian Thực
           </div>
-          <h1 style={{ fontSize: '36px', fontWeight: 800, lineHeight: 1.2, marginBottom: '14px', color: '#fff' }}>
+          <h1 style={{ fontSize: 'clamp(22px, 4.2vw, 34px)', fontWeight: 800, lineHeight: 1.25, marginBottom: '12px', color: '#fff' }}>
             Đắm chìm vào các sự kiện âm nhạc & giải trí đỉnh cao
           </h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '16px', marginBottom: '24px' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 'clamp(13px, 2.2vw, 15px)', marginBottom: '20px', lineHeight: 1.6 }}>
             Đặt vé giữ chỗ theo sơ đồ ghế hoặc chọn vé khu vực đứng tự do siêu nhanh chóng, an toàn và tiện lợi.
           </p>
 
@@ -138,31 +138,32 @@ export default function EventsPage({ events, onSelectEvent, isLoading = false })
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
+            gap: '10px',
             backgroundColor: 'rgba(15, 23, 42, 0.85)',
             border: '1px solid var(--border-glow)',
-            padding: '8px 16px',
+            padding: '8px clamp(12px, 2.5vw, 16px)',
             borderRadius: 'var(--radius-full)',
             boxShadow: '0 8px 30px rgba(0, 0, 0, 0.4)'
           }}>
-            <Search size={20} color="var(--primary-light)" />
+            <Search size={18} color="var(--primary-light)" style={{ flexShrink: 0 }} />
             <input
               type="text"
-              placeholder="Tìm kiếm theo tên sự kiện, nghệ sĩ, địa điểm..."
+              placeholder="Tìm kiếm sự kiện, nghệ sĩ, địa điểm..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 flex: 1,
+                minWidth: 0,
                 background: 'transparent',
                 border: 'none',
                 color: '#fff',
-                fontSize: '15px'
+                fontSize: '14px'
               }}
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                style={{ background: 'none', color: 'var(--text-dim)', fontSize: '13px' }}
+                style={{ background: 'none', color: 'var(--text-dim)', fontSize: '13px', padding: '2px 6px' }}
               >
                 Xóa
               </button>
@@ -177,7 +178,7 @@ export default function EventsPage({ events, onSelectEvent, isLoading = false })
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
-        gap: '16px',
+        gap: '12px',
         marginBottom: '20px'
       }}>
         {/* Nút Trigger Dropdown Bộ lọc */}
@@ -297,8 +298,8 @@ export default function EventsPage({ events, onSelectEvent, isLoading = false })
 
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-            gap: '24px'
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))',
+            gap: 'clamp(16px, 3vw, 24px)'
           }}>
             {/* 1. Bộ lọc Giá vé tối thiểu (Slider + Pills) */}
             <div>
@@ -471,8 +472,8 @@ export default function EventsPage({ events, onSelectEvent, isLoading = false })
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-          gap: '24px'
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))',
+          gap: 'clamp(16px, 2.5vw, 24px)'
         }}>
           {filteredEvents.map(event => (
             <div
@@ -497,7 +498,7 @@ export default function EventsPage({ events, onSelectEvent, isLoading = false })
               }}
             >
               {/* Thumbnail & Badges */}
-              <div style={{ position: 'relative', width: '100%', height: '200px', overflow: 'hidden' }}>
+              <div style={{ position: 'relative', width: '100%', height: 'clamp(170px, 25vw, 200px)', overflow: 'hidden' }}>
                 <img
                   src={event.image}
                   alt={event.title}
