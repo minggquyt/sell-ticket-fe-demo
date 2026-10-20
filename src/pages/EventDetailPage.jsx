@@ -224,6 +224,9 @@ export default function EventDetailPage({
   // Trạng thái quản lý việc đã giữ ghế thành công hay chưa
   const [isReserved, setIsReserved] = useState(false);
 
+  // Danh sách ID ghế đã giữ thành công từ Backend (dùng cho cả SEAT_BASED và ZONE_BASED khi thanh toán)
+  const [reservedSeatIds, setReservedSeatIds] = useState([]);
+
   // Thời điểm hết hạn giữ ghế (lấy từ trường reserved_until của server trả về)
   const [reservedUntilTime, setReservedUntilTime] = useState(null);
 
@@ -248,6 +251,7 @@ export default function EventDetailPage({
         // Hết thời gian giữ ghế: reset lại trạng thái để người dùng chọn lại
         setIsReserved(false);
         setReservedUntilTime(null);
+        setReservedSeatIds([]);
         alert('⏰ Thời gian giữ ghế đã hết. Vui lòng thực hiện lại!');
       }
     }, 1000);
@@ -496,6 +500,7 @@ export default function EventDetailPage({
         const heldSeatsData = holdRes?.data?.seats || [];
 
         if (expiry) {
+          setReservedSeatIds(holdRes?.data?.seatIds || seatIdsToCheckout);
           setReservedUntilTime(expiry);
           setIsReserved(true);
 
@@ -543,6 +548,7 @@ export default function EventDetailPage({
         }
 
         if (expiry) {
+          setReservedSeatIds(holdRes?.data?.seatIds || []);
           setReservedUntilTime(expiry);
           setIsReserved(true);
 
@@ -571,7 +577,7 @@ export default function EventDetailPage({
       if (isSeated) {
         // --- LUỒNG SEATED-BASED ---
         seatIdsToCheckout = selectedSeats.map(s => s.id).filter(Boolean);
-
+        
         if (seatIdsToCheckout.length === 0) {
           seatIdsToCheckout = selectedSeats.map(s => {
             const found = backendSeats.find(bs => bs.seat_number === s.code || bs.seat_number === s.code.replace('-', ''));
