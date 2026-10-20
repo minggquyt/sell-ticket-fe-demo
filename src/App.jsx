@@ -260,7 +260,6 @@ export default function App() {
       alert('Đã xóa sự kiện: ' + err.message);
     }
   };
-
   const currentEvent = eventsList.find(e => e.id === selectedEventId) || (eventsList.length > 0 ? eventsList[0] : null);
 
   // NẾU TÀI KHOẢN ADMIN ĐÃ ĐĂNG NHẬP: CHỈ HIỂN THỊ TRANG QUẢN TRỊ DUY NHẤT
