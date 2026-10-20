@@ -252,14 +252,12 @@ export default function AdminPage({
     const evMaxPrice = getMaxPrice(ev);
     const evVenue = getEventVenue(ev);
     const evDate = formatEventDate(ev) || ev.date || '';
-
     const rowsCount = ev.rowsCount || ev.seatConfig?.rowsCount || (singleTier.rows?.length) || 7;
     const seatsPerRow = ev.seatsPerRow || ev.seatConfig?.seatsPerRow || 12;
     const totalSeats = ev.totalSeats || ev.seatConfig?.totalSeats || (rowsCount * seatsPerRow);
 
     const price = evMinPrice > 0 ? evMinPrice : (singleTier.price > 0 ? singleTier.price : (Number(ev.seatPrice) > 0 ? Number(ev.seatPrice) : 500000));
     const maxP = evMaxPrice > 0 ? evMaxPrice : price;
-
     setFormData({
       ...ev,
       event_type: isSeated ? 'SEAT_BASED' : 'ZONE_BASED',
@@ -363,6 +361,7 @@ export default function AdminPage({
         rowsCount,
         seatsPerRow,
         price
+
       };
 
       payload = {
@@ -517,6 +516,7 @@ export default function AdminPage({
                 Ticket<span style={{ color: '#ec4899' }}>Verse</span>
               </span>
               <span style={{ fontSize: '9px', color: '#f472b6', fontWeight: 700, backgroundColor: 'rgba(236, 72, 153, 0.2)', padding: '2px 5px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+
                 ADMIN
               </span>
             </div>
@@ -524,6 +524,7 @@ export default function AdminPage({
         </div>
 
         {/* Quick Tab pills on mobile topbar */}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
           <button
             onClick={() => { setActiveTab('events'); setIsMobileSidebarOpen(false); }}
@@ -537,6 +538,7 @@ export default function AdminPage({
               cursor: 'pointer',
               border: 'none',
               whiteSpace: 'nowrap'
+
             }}
           >
             Sự kiện
@@ -544,6 +546,7 @@ export default function AdminPage({
           <button
             onClick={() => { setActiveTab('tickets'); setIsMobileSidebarOpen(false); }}
             style={{
+
               padding: '5px 10px',
               borderRadius: 'var(--radius-sm)',
               fontSize: '11px',
@@ -553,6 +556,7 @@ export default function AdminPage({
               cursor: 'pointer',
               border: 'none',
               whiteSpace: 'nowrap'
+
             }}
           >
             Vé ({ticketsList.length})
@@ -806,6 +810,7 @@ export default function AdminPage({
         padding: 'clamp(14px, 3vw, 28px) clamp(10px, 2.5vw, 24px)',
         backgroundColor: 'var(--bg-primary)',
         boxSizing: 'border-box'
+
       }}>
         {/* ================= TAB 1: QUẢN LÝ SỰ KIỆN ================= */}
         {activeTab === 'events' && (
@@ -899,7 +904,6 @@ export default function AdminPage({
                   }}
                 />
               </div>
-
               {/* Loại vé Filter & Toggle Chế độ xem */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1413,11 +1417,13 @@ export default function AdminPage({
                     color: '#f472b6',
                     border: '1px solid rgba(236, 72, 153, 0.3)',
                     cursor: 'pointer',
+
                     fontSize: '12px',
                     fontWeight: 600
                   }}
                 >
                   <RefreshCw size={13} className={isLoadingTickets ? 'spin' : ''} />
+
                   {isLoadingTickets ? 'Đang đồng bộ...' : 'Làm mới'}
                 </button>
               </div>
@@ -1784,6 +1790,7 @@ export default function AdminPage({
                           <tr>
                             <td colSpan="7" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
                               Đang tải dữ liệu vé từ hệ thống database Supabase...
+
                             </td>
                           </tr>
                         ) : filteredTickets.length === 0 ? (
@@ -2114,7 +2121,6 @@ export default function AdminPage({
                   />
                 </div>
               </div>
-
               {/* Cấu hình giá & Số ghế / Vé: Phân tách Seated-based vs Zone-based */}
               {(formData.event_type === 'SEAT_BASED' || formData.type === 'seated') ? (
                 <div style={{
@@ -2148,6 +2154,7 @@ export default function AdminPage({
 
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
                     💡 Nhập số hàng và số ghế mỗi hàng để tạo sơ đồ ghế ngồi tự động. Chuẩn thiết kế là 12 ghế/hàng để hiển thị đồng nhất không bị cuộn ngang.
+
                   </p>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '16px' }}>
@@ -2194,6 +2201,7 @@ export default function AdminPage({
                             maxPrice: numVal,
                             min_price: `${numVal.toFixed(2)}`,
                             max_price: `${numVal.toFixed(2)}`
+
                           });
                         }}
                         style={{
@@ -2314,6 +2322,7 @@ export default function AdminPage({
                     </div>
                   </div>
 
+
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -2326,6 +2335,7 @@ export default function AdminPage({
                   }}>
                     <span style={{ color: 'var(--text-dim)' }}>
                       Quy mô dự kiến: <strong style={{ color: '#fff' }}>{formData.totalSeats || ((formData.rowsCount || 7) * (formData.seatsPerRow || 12))} ghế ngồi</strong> ({formData.rowsCount || 7} hàng A-{String.fromCharCode(64 + Math.min(26, Number(formData.rowsCount) || 7))}, {formData.seatsPerRow || 12} ghế/hàng)
+
                     </span>
                     <span style={{ color: 'var(--accent-pink)', fontWeight: 700 }}>
                       Giá bán: {formatVND(formData.seatPrice || formData.minPrice || 500000)} / vé
@@ -2490,6 +2500,7 @@ export default function AdminPage({
                     <span style={{ color: 'var(--accent-pink)', fontWeight: 700 }}>
                       {(formData.zones || []).length} khu vực
                     </span>
+
                   </div>
                 </div>
               )}

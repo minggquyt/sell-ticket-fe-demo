@@ -273,8 +273,13 @@ export default function App() {
   // NẾU TÀI KHOẢN ADMIN ĐÃ ĐĂNG NHẬP: CHỈ HIỂN THỊ TRANG QUẢN TRỊ DUY NHẤT
   if (isAdminLoggedIn) {
     return (
+// <<<<<<< HEAD
       <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
         <main style={{ flex: 1, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
+{/* =======
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
+        <main style={{ flex: 1 }}>
+>>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
           <AdminPage
             events={eventsList}
             onAddEvent={handleAddEvent}
@@ -292,7 +297,11 @@ export default function App() {
 
   // GIAO DIỆN DÀNH CHO KHÁCH HÀNG / NGƯỜI DÙNG THƯỜNG
   return (
+// <<<<<<< HEAD
     <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
+{/* =======
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
+>>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
       {/* Navigation Bar */}
       <Navbar
         currentRoute={currentRoute}
@@ -304,7 +313,11 @@ export default function App() {
       />
 
       {/* Main View Router */}
+{/* <<<<<<< HEAD */}
       <main style={{ flex: 1, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
+{/* =======
+      <main style={{ flex: 1 }}>
+>>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
         {currentRoute === 'login' && (
           <LoginPage
             onLoginSuccess={handleLoginSuccess}
