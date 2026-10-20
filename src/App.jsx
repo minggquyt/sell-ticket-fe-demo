@@ -9,6 +9,7 @@ import {
   fetchEvents, 
   fetchSeatsByEvent, 
   createEventOnBackend, 
+  updateEventOnBackend,
   deleteEventOnBackend 
 } from './services/eventService';
 import { Heart, Globe, Shield, HelpCircle, Loader2 } from 'lucide-react';
@@ -244,9 +245,16 @@ export default function App() {
     }
   };
 
-  const handleUpdateEvent = (updatedEvent) => {
-    setEventsList(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
-    alert('Cập nhật thông tin sự kiện thành công!');
+  const handleUpdateEvent = async (updatedEvent) => {
+    try {
+      const saved = await updateEventOnBackend(updatedEvent.id, updatedEvent, user?.token);
+      setEventsList(prev => prev.map(e => e.id === updatedEvent.id ? saved : e));
+      alert('Cập nhật thông tin sự kiện và giá vé thành công lên hệ thống!');
+    } catch (err) {
+      console.error(err);
+      setEventsList(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
+      alert('Đã cập nhật sự kiện: ' + err.message);
+    }
   };
 
   const handleDeleteEvent = async (id) => {
@@ -265,13 +273,15 @@ export default function App() {
   // NẾU TÀI KHOẢN ADMIN ĐÃ ĐĂNG NHẬP: CHỈ HIỂN THỊ TRANG QUẢN TRỊ DUY NHẤT
   if (isAdminLoggedIn) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
-        <main style={{ flex: 1 }}>
+      <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
+        <main style={{ flex: 1, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
           <AdminPage
             events={eventsList}
             onAddEvent={handleAddEvent}
             onUpdateEvent={handleUpdateEvent}
             onDeleteEvent={handleDeleteEvent}
+            onViewEvent={(ev) => navigateTo('detail', ev.id)}
+            onNavigate={navigateTo}
             user={user}
             onLogout={handleLogout}
           />
@@ -282,7 +292,7 @@ export default function App() {
 
   // GIAO DIỆN DÀNH CHO KHÁCH HÀNG / NGƯỜI DÙNG THƯỜNG
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
+    <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
       {/* Navigation Bar */}
       <Navbar
         currentRoute={currentRoute}
@@ -294,7 +304,7 @@ export default function App() {
       />
 
       {/* Main View Router */}
-      <main style={{ flex: 1 }}>
+      <main style={{ flex: 1, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
         {currentRoute === 'login' && (
           <LoginPage
             onLoginSuccess={handleLoginSuccess}
