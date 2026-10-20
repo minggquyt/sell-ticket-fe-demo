@@ -10,8 +10,30 @@ export function normalizeEvent(raw) {
   if (!raw) return null;
 
   const isSeated = raw.event_type === 'SEAT_BASED' || raw.type === 'seated';
-  const minPriceNum = Number(raw.min_price) || (raw.minPrice ? Number(raw.minPrice) : 900000);
-  const maxPriceNum = Number(raw.max_price) || (raw.maxPrice ? Number(raw.maxPrice) : minPriceNum);
+  
+  const getRawPrice = () => {
+    if (raw.min_price !== undefined && raw.min_price !== null && raw.min_price !== '') {
+      const p = Number(raw.min_price);
+      if (!isNaN(p) && p > 0) return p;
+    }
+    if (raw.minPrice !== undefined && raw.minPrice !== null && raw.minPrice !== '') {
+      const p = Number(raw.minPrice);
+      if (!isNaN(p) && p > 0) return p;
+    }
+    if (raw.seatPrice !== undefined && raw.seatPrice !== null && raw.seatPrice !== '') {
+      const p = Number(raw.seatPrice);
+      if (!isNaN(p) && p > 0) return p;
+    }
+    if (raw.seatConfig?.price !== undefined && raw.seatConfig?.price !== null) {
+      const p = Number(raw.seatConfig.price);
+      if (!isNaN(p) && p > 0) return p;
+    }
+    return 500000;
+  };
+  const minPriceNum = getRawPrice();
+  const maxPriceNum = (raw.max_price !== undefined && raw.max_price !== null && raw.max_price !== '' && Number(raw.max_price) > 0)
+    ? Number(raw.max_price)
+    : ((raw.maxPrice !== undefined && raw.maxPrice !== null && Number(raw.maxPrice) > 0) ? Number(raw.maxPrice) : minPriceNum);
 
   const singleSeatTier = {
     id: 'standard',
@@ -172,6 +194,27 @@ export async function createEventOnBackend(eventData, token) {
 }
 
 export const createEventOnSupabase = createEventOnBackend;
+
+/**
+ * Admin: Cập nhật sự kiện (Route: PUT /api/admin/events/:eventId)
+ */
+export async function updateEventOnBackend(eventId, eventData, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE_URL}/admin/events/${eventId}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(eventData)
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || 'Không thể cập nhật sự kiện.');
+  }
+  return normalizeEvent(data.data);
+}
+
+export const updateEventOnSupabase = updateEventOnBackend;
 
 /**
  * Admin: Xóa sự kiện (Route: DELETE /api/admin/events/:eventId)
