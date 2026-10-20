@@ -5,12 +5,12 @@ import LoginPage from './pages/LoginPage';
 import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
 import AdminPage from './pages/AdminPage';
-import { 
-  fetchEvents, 
-  fetchSeatsByEvent, 
-  createEventOnBackend, 
+import {
+  fetchEvents,
+  fetchSeatsByEvent,
+  createEventOnBackend,
   updateEventOnBackend,
-  deleteEventOnBackend 
+  deleteEventOnBackend
 } from './services/eventService';
 import { Heart, Globe, Shield, HelpCircle, Loader2 } from 'lucide-react';
 
@@ -213,8 +213,18 @@ export default function App() {
     if (!selectedEventId) return;
     fetchSeatsByEvent(selectedEventId).then(seats => {
       if (seats && seats.length > 0) {
+        const now = new Date();
         const soldOrReserved = seats
-          .filter(s => s.status === 'SOLD' || s.status === 'RESERVED')
+          .filter(s => {
+            if (s.status === 'SOLD') return true;
+            // Chỉ coi là đã đặt nếu là ghế đang giữ của NGƯỜI KHÁC và còn trong thời gian giữ:
+            if ((s.status === 'RESERVED' || s.status === 'PAYMENT_PROCESSING') && s.reserved_until) {
+              const notExpired = new Date(s.reserved_until) > now;
+              const isOtherUser = !user?.id || (s.reserved_by && s.reserved_by !== user.id);
+              return notExpired && isOtherUser;
+            }
+            return false;
+          })
           .map(s => {
             const num = s.seat_number;
             if (/^[A-G]\d+$/.test(num)) {
@@ -222,24 +232,48 @@ export default function App() {
             }
             return num;
           });
-        if (soldOrReserved.length > 0) {
-          setOccupiedSeatsByEvent(prev => ({
-            ...prev,
-            [selectedEventId]: new Set([...(prev[selectedEventId] || []), ...soldOrReserved])
-          }));
-        }
+
+        setOccupiedSeatsByEvent(prev => ({
+          ...prev,
+          [selectedEventId]: new Set(soldOrReserved)
+        }));
       }
     }).catch(err => console.warn('Không thể đồng bộ ghế từ Backend:', err));
-  }, [selectedEventId]);
+  }, [selectedEventId, user?.id]);
 
   // --- CRUD CHO ADMIN ---
   const handleAddEvent = async (newEvent) => {
     try {
       const created = await createEventOnBackend(newEvent, user?.token);
-      setEventsList(prev => [created, ...prev]);
+      const merged = {
+        ...newEvent,
+        ...created,
+        rowsCount: newEvent.rowsCount || created.rowsCount,
+        seatsPerRow: newEvent.seatsPerRow || created.seatsPerRow,
+        totalSeats: newEvent.totalSeats || created.totalSeats,
+        seatConfig: {
+          ...(created.seatConfig || {}),
+          ...(newEvent.seatConfig || {}),
+          rowsCount: newEvent.rowsCount || created.rowsCount,
+          seatsPerRow: newEvent.seatsPerRow || created.seatsPerRow
+        }
+      };
+      if (typeof window !== 'undefined' && window.localStorage && merged.id) {
+        localStorage.setItem(`EVENT_LAYOUT_${merged.id}`, JSON.stringify({
+          rowsCount: merged.rowsCount,
+          seatsPerRow: merged.seatsPerRow
+        }));
+      }
+      setEventsList(prev => [merged, ...prev]);
       alert('Thêm sự kiện mới thành công lên hệ thống Backend!');
     } catch (err) {
       console.error(err);
+      if (typeof window !== 'undefined' && window.localStorage && newEvent.id) {
+        localStorage.setItem(`EVENT_LAYOUT_${newEvent.id}`, JSON.stringify({
+          rowsCount: newEvent.rowsCount,
+          seatsPerRow: newEvent.seatsPerRow
+        }));
+      }
       setEventsList(prev => [newEvent, ...prev]);
       alert('Đã thêm sự kiện: ' + err.message);
     }
@@ -248,10 +282,35 @@ export default function App() {
   const handleUpdateEvent = async (updatedEvent) => {
     try {
       const saved = await updateEventOnBackend(updatedEvent.id, updatedEvent, user?.token);
-      setEventsList(prev => prev.map(e => e.id === updatedEvent.id ? saved : e));
+      const merged = {
+        ...updatedEvent,
+        ...saved,
+        rowsCount: updatedEvent.rowsCount || saved.rowsCount,
+        seatsPerRow: updatedEvent.seatsPerRow || saved.seatsPerRow,
+        totalSeats: updatedEvent.totalSeats || saved.totalSeats,
+        seatConfig: {
+          ...(saved.seatConfig || {}),
+          ...(updatedEvent.seatConfig || {}),
+          rowsCount: updatedEvent.rowsCount || saved.rowsCount,
+          seatsPerRow: updatedEvent.seatsPerRow || saved.seatsPerRow
+        }
+      };
+      if (typeof window !== 'undefined' && window.localStorage && merged.id) {
+        localStorage.setItem(`EVENT_LAYOUT_${merged.id}`, JSON.stringify({
+          rowsCount: merged.rowsCount,
+          seatsPerRow: merged.seatsPerRow
+        }));
+      }
+      setEventsList(prev => prev.map(e => e.id === updatedEvent.id ? merged : e));
       alert('Cập nhật thông tin sự kiện và giá vé thành công lên hệ thống!');
     } catch (err) {
       console.error(err);
+      if (typeof window !== 'undefined' && window.localStorage && updatedEvent.id) {
+        localStorage.setItem(`EVENT_LAYOUT_${updatedEvent.id}`, JSON.stringify({
+          rowsCount: updatedEvent.rowsCount,
+          seatsPerRow: updatedEvent.seatsPerRow
+        }));
+      }
       setEventsList(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
       alert('Đã cập nhật sự kiện: ' + err.message);
     }
@@ -273,13 +332,8 @@ export default function App() {
   // NẾU TÀI KHOẢN ADMIN ĐÃ ĐĂNG NHẬP: CHỈ HIỂN THỊ TRANG QUẢN TRỊ DUY NHẤT
   if (isAdminLoggedIn) {
     return (
-// <<<<<<< HEAD
       <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
         <main style={{ flex: 1, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
-{/* =======
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
-        <main style={{ flex: 1 }}>
->>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
           <AdminPage
             events={eventsList}
             onAddEvent={handleAddEvent}
@@ -297,11 +351,7 @@ export default function App() {
 
   // GIAO DIỆN DÀNH CHO KHÁCH HÀNG / NGƯỜI DÙNG THƯỜNG
   return (
-// <<<<<<< HEAD
     <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
-{/* =======
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
->>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
       {/* Navigation Bar */}
       <Navbar
         currentRoute={currentRoute}
@@ -313,11 +363,7 @@ export default function App() {
       />
 
       {/* Main View Router */}
-{/* <<<<<<< HEAD */}
       <main style={{ flex: 1, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
-{/* =======
-      <main style={{ flex: 1 }}>
->>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
         {currentRoute === 'login' && (
           <LoginPage
             onLoginSuccess={handleLoginSuccess}
@@ -390,94 +436,94 @@ export default function App() {
             </button>
           </div>
         )}
-        </main>
+      </main>
 
-        {/* Global Cart Modal - Làm mờ nền toàn màn hình, đặt ở root app */}
-        <CartModal
-          isOpen={isCartOpen}
-          onClose={() => setIsCartOpen(false)}
-          cart={cart}
-        />
+      {/* Global Cart Modal - Làm mờ nền toàn màn hình, đặt ở root app */}
+      <CartModal
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cart={cart}
+      />
 
-        {/* Global Footer (Chỉ hiển thị ngoài trang Admin) */}
-        {!(currentRoute === 'admin' && user && user.role === 'admin') && (
-          <footer style={{
-            borderTop: '1px solid var(--border-color)',
-            backgroundColor: 'rgba(10, 13, 20, 0.95)',
-            padding: 'clamp(32px, 5vw, 48px) clamp(16px, 3.5vw, 24px) 24px',
-            marginTop: 'auto'
+      {/* Global Footer (Chỉ hiển thị ngoài trang Admin) */}
+      {!(currentRoute === 'admin' && user && user.role === 'admin') && (
+        <footer style={{
+          borderTop: '1px solid var(--border-color)',
+          backgroundColor: 'rgba(10, 13, 20, 0.95)',
+          padding: 'clamp(32px, 5vw, 48px) clamp(16px, 3.5vw, 24px) 24px',
+          marginTop: 'auto'
+        }}>
+          <div style={{
+            maxWidth: '1280px',
+            margin: '0 auto',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
+            gap: 'clamp(20px, 3.5vw, 32px)',
+            marginBottom: '32px'
           }}>
-            <div style={{
-              maxWidth: '1280px',
-              margin: '0 auto',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
-              gap: 'clamp(20px, 3.5vw, 32px)',
-              marginBottom: '32px'
-            }}>
-              <div>
-                <h4 style={{ fontSize: '18px', fontWeight: 800, color: '#fff', marginBottom: '14px' }}>
-                  Ticket<span style={{ color: 'var(--accent-pink)' }}>Verse</span>
-                </h4>
-                <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6 }}>
-                  Nền tảng phân phối vé sự kiện và nhạc hội trực tuyến hàng đầu. Đảm bảo 100% vé chính hãng và trải nghiệm đặt vé mượt mà nhất.
-                </p>
-              </div>
+            <div>
+              <h4 style={{ fontSize: '18px', fontWeight: 800, color: '#fff', marginBottom: '14px' }}>
+                Ticket<span style={{ color: 'var(--accent-pink)' }}>Verse</span>
+              </h4>
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6 }}>
+                Nền tảng phân phối vé sự kiện và nhạc hội trực tuyến hàng đầu. Đảm bảo 100% vé chính hãng và trải nghiệm đặt vé mượt mà nhất.
+              </p>
+            </div>
 
-              <div>
-                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Khám phá</h5>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Nhạc hội & Concert</li>
-                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Lễ hội âm nhạc EDM</li>
-                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Fan Meeting</li>
-                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Khu vực & Sơ đồ ghế</li>
-                </ul>
-              </div>
+            <div>
+              <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Khám phá</h5>
+              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Nhạc hội & Concert</li>
+                <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Lễ hội âm nhạc EDM</li>
+                <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Fan Meeting</li>
+                <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Khu vực & Sơ đồ ghế</li>
+              </ul>
+            </div>
 
-              <div>
-                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Dành cho ban tổ chức</h5>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  <li>Hợp tác phân phối vé</li>
-                  <li>Giải pháp Check-in QR bảo mật</li>
-                  <li>Quản lý phân khu thời gian thực</li>
-                  <li>Báo cáo doanh thu & đối soát</li>
-                </ul>
-              </div>
+            <div>
+              <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Dành cho ban tổ chức</h5>
+              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                <li>Hợp tác phân phối vé</li>
+                <li>Giải pháp Check-in QR bảo mật</li>
+                <li>Quản lý phân khu thời gian thực</li>
+                <li>Báo cáo doanh thu & đối soát</li>
+              </ul>
+            </div>
 
-              <div>
-                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Hỗ trợ khách hàng</h5>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  <div>Hotline: 1900 6868 (8:00 - 22:00)</div>
-                  <div>Email: support@ticketverse.vn</div>
-                  <div style={{ marginTop: '8px', color: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Shield size={14} /> Bảo mật giao dịch 100%
-                  </div>
+            <div>
+              <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Hỗ trợ khách hàng</h5>
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                <div>Hotline: 1900 6868 (8:00 - 22:00)</div>
+                <div>Email: support@ticketverse.vn</div>
+                <div style={{ marginTop: '8px', color: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Shield size={14} /> Bảo mật giao dịch 100%
                 </div>
               </div>
             </div>
+          </div>
 
-            <div style={{
-              maxWidth: '1280px',
-              margin: '0 auto',
-              paddingTop: '20px',
-              borderTop: '1px solid var(--border-color)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: '12px',
-              fontSize: '12px',
-              color: 'var(--text-dim)'
-            }}>
-              <div>© 2026 TicketVerse Inc. All rights reserved.</div>
-              <div style={{ display: 'flex', gap: '16px' }}>
-                <span>Điều khoản sử dụng</span>
-                <span>Chính sách bảo mật</span>
-                <span>Quy định hoàn hủy vé</span>
-              </div>
+          <div style={{
+            maxWidth: '1280px',
+            margin: '0 auto',
+            paddingTop: '20px',
+            borderTop: '1px solid var(--border-color)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+            fontSize: '12px',
+            color: 'var(--text-dim)'
+          }}>
+            <div>© 2026 TicketVerse Inc. All rights reserved.</div>
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <span>Điều khoản sử dụng</span>
+              <span>Chính sách bảo mật</span>
+              <span>Quy định hoàn hủy vé</span>
             </div>
-          </footer>
-        )}
-      </div>
+          </div>
+        </footer>
+      )}
+    </div>
   );
 }

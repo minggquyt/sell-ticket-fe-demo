@@ -57,12 +57,35 @@ export const getEventVenue = (event) => {
 
 export const getMinPrice = (event) => {
   if (!event) return 0;
-  return Number(event.min_price ?? event.minPrice ?? 0);
+  const p1 = Number(event.minPrice);
+  if (!isNaN(p1) && p1 > 0) return p1;
+  const p2 = Number(event.min_price);
+  if (!isNaN(p2) && p2 > 0) return p2;
+  const p3 = Number(event.price);
+  if (!isNaN(p3) && p3 > 0) return p3;
+  const p4 = Number(event.seatPrice);
+  if (!isNaN(p4) && p4 > 0) return p4;
+  if (event.seatConfig?.price && Number(event.seatConfig.price) > 0) {
+    return Number(event.seatConfig.price);
+  }
+  if (Array.isArray(event.seatTiers) && event.seatTiers.length > 0) {
+    const p = Number(event.seatTiers[0].price);
+    if (!isNaN(p) && p > 0) return p;
+  }
+  if (Array.isArray(event.zones) && event.zones.length > 0) {
+    const valid = event.zones.map(z => Number(z.price)).filter(p => !isNaN(p) && p > 0);
+    if (valid.length > 0) return Math.min(...valid);
+  }
+  return 0;
 };
 
 export const getMaxPrice = (event) => {
   if (!event) return 0;
-  return Number(event.max_price ?? event.maxPrice ?? getMinPrice(event));
+  const p1 = Number(event.maxPrice);
+  if (!isNaN(p1) && p1 > 0) return p1;
+  const p2 = Number(event.max_price);
+  if (!isNaN(p2) && p2 > 0) return p2;
+  return getMinPrice(event);
 };
 
 export const getSingleSeatTier = (event) => {

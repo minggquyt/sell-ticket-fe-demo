@@ -1,7 +1,11 @@
 import { formatEventDate, formatEventTime } from '../data/events.js';
 
-// Cấu hình URL Backend: ưu tiên biến môi trường VITE_API_URL, fallback /api
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace(/\/$/, '');
+// Cấu hình URL Backend: ưu tiên localhost khi chạy môi trường local dev, fallback VITE_API_URL
+export const API_BASE_URL = (
+  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+    ? 'http://localhost:3000/api'
+    : (import.meta.env.VITE_API_URL || 'http://localhost:3000/api')
+).replace(/\/$/, '');
 
 /**
  * Chuẩn hóa sự kiện trả về từ Backend để tương thích giao diện FE
@@ -10,7 +14,7 @@ export function normalizeEvent(raw) {
   if (!raw) return null;
 
   const isSeated = raw.event_type === 'SEAT_BASED' || raw.type === 'seated';
-  
+
   const getRawPrice = () => {
     if (raw.min_price !== undefined && raw.min_price !== null && raw.min_price !== '') {
       const p = Number(raw.min_price);
@@ -24,23 +28,86 @@ export function normalizeEvent(raw) {
       const p = Number(raw.seatPrice);
       if (!isNaN(p) && p > 0) return p;
     }
+    if (raw.price !== undefined && raw.price !== null && raw.price !== '') {
+      const p = Number(raw.price);
+      if (!isNaN(p) && p > 0) return p;
+    }
     if (raw.seatConfig?.price !== undefined && raw.seatConfig?.price !== null) {
       const p = Number(raw.seatConfig.price);
       if (!isNaN(p) && p > 0) return p;
     }
-    return 500000;
+    if (Array.isArray(raw.zones) && raw.zones.length > 0) {
+      const valid = raw.zones.map(z => Number(z.price)).filter(p => !isNaN(p) && p > 0);
+      if (valid.length > 0) return Math.min(...valid);
+    }
+    if (Array.isArray(raw.seatTiers) && raw.seatTiers.length > 0) {
+      const valid = raw.seatTiers.map(t => Number(t.price)).filter(p => !isNaN(p) && p > 0);
+      if (valid.length > 0) return Math.min(...valid);
+    }
+    // Nếu có giá trị nhưng bằng 0
+    if (raw.min_price === 0 || raw.min_price === '0' || raw.minPrice === 0 || raw.price === 0) {
+      return 0;
+    }
+    return 0;
   };
   const minPriceNum = getRawPrice();
   const maxPriceNum = (raw.max_price !== undefined && raw.max_price !== null && raw.max_price !== '' && Number(raw.max_price) > 0)
     ? Number(raw.max_price)
     : ((raw.maxPrice !== undefined && raw.maxPrice !== null && Number(raw.maxPrice) > 0) ? Number(raw.maxPrice) : minPriceNum);
 
+  let extractedRows = Number(raw.rowsCount || raw.seatConfig?.rowsCount || 0);
+  let extractedCols = Number(raw.seatsPerRow || raw.seatConfig?.seatsPerRow || 0);
+
+  // 1. Kiểm tra trong highlights nếu có lưu thông tin layout
+  if ((!extractedRows || !extractedCols) && Array.isArray(raw.highlights)) {
+    for (const h of raw.highlights) {
+      if (typeof h === 'string') {
+        const m = h.match(/LAYOUT:ROWS=(\d+);COLS=(\d+)/);
+        if (m) {
+          if (!extractedRows) extractedRows = parseInt(m[1], 10);
+          if (!extractedCols) extractedCols = parseInt(m[2], 10);
+          break;
+        }
+      }
+    }
+  }
+
+  // 2. Kiểm tra trong localStorage (bền vững theo máy người dùng khi BE chưa lưu layout)
+  if ((!extractedRows || !extractedCols) && typeof window !== 'undefined' && window.localStorage && raw.id) {
+    try {
+      const stored = localStorage.getItem(`EVENT_LAYOUT_${raw.id}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (!extractedRows && parsed.rowsCount) extractedRows = Number(parsed.rowsCount);
+        if (!extractedCols && parsed.seatsPerRow) extractedCols = Number(parsed.seatsPerRow);
+      }
+    } catch (e) { }
+  }
+
+  // 3. Phân tích tiêu đề (VD: "Test 5 x 7" hay "3x5" -> 5 hàng 7 ghế hoặc 3 hàng 5 ghế)
+  if ((!extractedRows || !extractedCols) && raw.title) {
+    const tm = raw.title.match(/(\d+)\s*[xX*]\s*(\d+)/);
+    if (tm) {
+      if (!extractedRows) extractedRows = parseInt(tm[1], 10);
+      if (!extractedCols) extractedCols = parseInt(tm[2], 10);
+    }
+  }
+
+  const finalRowsCount = extractedRows > 0 ? extractedRows : 7;
+  const finalSeatsPerRow = extractedCols > 0 ? extractedCols : 12;
+  const finalTotalSeats = Number(raw.totalSeats || raw.seatConfig?.totalSeats || (finalRowsCount * finalSeatsPerRow));
+
+  const rowLetters = Array.from({ length: finalRowsCount }, (_, i) => {
+    if (i < 26) return String.fromCharCode(65 + i);
+    return String.fromCharCode(64 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26));
+  });
+
   const singleSeatTier = {
     id: 'standard',
     name: 'Ghế tiêu chuẩn',
     price: minPriceNum,
     color: '#6366f1',
-    rows: ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+    rows: rowLetters
   };
 
   const isUpcoming = Boolean(
@@ -68,20 +135,32 @@ export function normalizeEvent(raw) {
     type: isSeated ? 'seated' : 'zone',
     thumbnails: Array.isArray(raw.thumbnails) ? raw.thumbnails : (raw.image ? [raw.image] : []),
     category: raw.category || 'Âm nhạc',
-    min_price: String(raw.min_price || minPriceNum),
-    max_price: String(raw.max_price || maxPriceNum),
+    min_price: String(minPriceNum),
+    max_price: String(maxPriceNum),
     minPrice: minPriceNum,
     maxPrice: maxPriceNum,
+    price: minPriceNum,
+    rowsCount: finalRowsCount,
+    seatsPerRow: finalSeatsPerRow,
+    totalSeats: finalTotalSeats,
+    seatConfig: {
+      rowsCount: finalRowsCount,
+      seatsPerRow: finalSeatsPerRow,
+      totalSeats: finalTotalSeats,
+      price: minPriceNum
+    },
     image: raw.image || (Array.isArray(raw.thumbnails) && raw.thumbnails[0]) || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80',
     banner: raw.banner || raw.image || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1600&q=80',
     organizer: raw.organizer || 'Ban tổ chức sự kiện',
-    highlights: Array.isArray(raw.highlights) ? raw.highlights : [],
+    highlights: Array.isArray(raw.highlights)
+      ? raw.highlights.filter(h => typeof h !== 'string' || !h.startsWith('LAYOUT:'))
+      : [],
     rules: Array.isArray(raw.rules) ? raw.rules : [],
     seatTiers: isSeated ? [singleSeatTier] : [],
     zones: raw.zones || (isSeated ? [] : [
-        { id: 'vip', name: 'Khu VIP (Sát sân khấu)', price: maxPriceNum || 1500000, color: '#ec4899', available: 50 },
-        { id: 'regular', name: 'Khu Tiêu Chuẩn (GA)', price: minPriceNum || 650000, color: '#06b6d4', available: 200 }
-      ]) // MISS FIELD IN RAW DATA
+      { id: 'vip', name: 'Khu VIP (Sát sân khấu)', price: maxPriceNum || 1500000, color: '#ec4899', available: 50 },
+      { id: 'regular', name: 'Khu Tiêu Chuẩn (GA)', price: minPriceNum || 650000, color: '#06b6d4', available: 200 }
+    ])
   };
 }
 
@@ -99,7 +178,39 @@ export async function fetchEvents() {
     const result = await res.json();
     const data = result.data || result;
     if (!Array.isArray(data)) return [];
-    return data.map(normalizeEvent); // DÒNG NÀY ĐỂ LÀM GÌ ?
+    const events = data.map(normalizeEvent);
+
+    // Tự động kiểm tra nếu có sự kiện có minPrice <= 0 thì đồng bộ từ chi tiết ghế
+    const eventsWithValidPrices = await Promise.all(events.map(async (ev) => {
+      if (ev && (!ev.minPrice || ev.minPrice <= 0)) {
+        try {
+          const seats = await fetchSeatsByEvent(ev.id);
+          if (seats && seats.length > 0) {
+            const prices = seats.map(s => Number(s.price || 0)).filter(p => p > 0);
+            if (prices.length > 0) {
+              const actualMin = Math.min(...prices);
+              const actualMax = Math.max(...prices);
+              return {
+                ...ev,
+                minPrice: actualMin,
+                maxPrice: actualMax,
+                min_price: String(actualMin),
+                max_price: String(actualMax),
+                price: actualMin,
+                seatTiers: ev.seatTiers && ev.seatTiers.length > 0
+                  ? ev.seatTiers.map(t => ({ ...t, price: actualMin }))
+                  : ev.seatTiers
+              };
+            }
+          }
+        } catch (e) {
+          // Bỏ qua lỗi phụ
+        }
+      }
+      return ev;
+    }));
+
+    return eventsWithValidPrices;
   } catch (err) {
     console.error('❌ Lỗi kết nối Backend /api/events:', err);
     return [];
@@ -271,12 +382,14 @@ export async function holdZones(eventId, zones, token) {
  */
 export async function releaseSeats(userId, seatIds, token) {
   try {
-    const response = await fetch(`${API_BASE_URL}/seats/release`, { 
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE_URL}/seats/release`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers,
       body: JSON.stringify({ userId, seatIds })
     });
 
