@@ -381,16 +381,16 @@ export default function App() {
           <footer style={{
             borderTop: '1px solid var(--border-color)',
             backgroundColor: 'rgba(10, 13, 20, 0.95)',
-            padding: '48px 24px 24px',
+            padding: 'clamp(32px, 5vw, 48px) clamp(16px, 3.5vw, 24px) 24px',
             marginTop: 'auto'
           }}>
             <div style={{
               maxWidth: '1280px',
               margin: '0 auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '32px',
-              marginBottom: '36px'
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
+              gap: 'clamp(20px, 3.5vw, 32px)',
+              marginBottom: '32px'
             }}>
               <div>
                 <h4 style={{ fontSize: '18px', fontWeight: 800, color: '#fff', marginBottom: '14px' }}>

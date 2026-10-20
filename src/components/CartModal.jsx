@@ -17,7 +17,7 @@ export default function CartModal({ isOpen, onClose, cart = [] }) {
         right: 0,
         bottom: 0,
         width: '100vw',
-        height: '100vh',
+        height: '100dvh',
         backgroundColor: 'rgba(5, 7, 12, 0.78)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
@@ -25,7 +25,7 @@ export default function CartModal({ isOpen, onClose, cart = [] }) {
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 999999,
-        padding: '20px'
+        padding: 'clamp(12px, 3vw, 20px)'
       }}
     >
       {/* Hộp Modal Giỏ hàng */}
@@ -35,7 +35,7 @@ export default function CartModal({ isOpen, onClose, cart = [] }) {
         style={{
           maxWidth: '580px',
           width: '100%',
-          maxHeight: '85vh',
+          maxHeight: '90dvh',
           borderRadius: 'var(--radius-xl)',
           backgroundColor: 'rgba(16, 22, 35, 0.95)',
           border: '1px solid rgba(255, 255, 255, 0.12)',
@@ -47,7 +47,7 @@ export default function CartModal({ isOpen, onClose, cart = [] }) {
       >
         {/* Header Modal */}
         <div style={{
-          padding: '22px 26px',
+          padding: 'clamp(16px, 3vw, 22px) clamp(16px, 3.5vw, 26px)',
           borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           alignItems: 'center',
@@ -107,7 +107,7 @@ export default function CartModal({ isOpen, onClose, cart = [] }) {
 
         {/* Nội dung danh sách vé */}
         <div style={{
-          padding: '24px 26px',
+          padding: 'clamp(16px, 3vw, 24px) clamp(16px, 3.5vw, 26px)',
           flex: 1,
           overflowY: 'auto',
           display: 'flex',
@@ -227,7 +227,7 @@ export default function CartModal({ isOpen, onClose, cart = [] }) {
 
         {/* Footer Modal */}
         <div style={{
-          padding: '18px 26px',
+          padding: 'clamp(14px, 2.5vw, 18px) clamp(16px, 3.5vw, 26px)',
           borderTop: '1px solid var(--border-color)',
           backgroundColor: 'rgba(10, 13, 20, 0.7)',
           display: 'flex',

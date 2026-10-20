@@ -51,11 +51,11 @@ export default function LoginPage({ onLoginSuccess, onNavigate }) {
 
   return (
     <div style={{
-      minHeight: 'calc(100vh - 72px)',
+      minHeight: 'calc(100dvh - 72px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '40px 20px',
+      padding: 'clamp(24px, 5vw, 40px) clamp(14px, 3vw, 20px)',
       position: 'relative'
     }}>
       {/* Background ambient lighting */}
@@ -63,8 +63,8 @@ export default function LoginPage({ onLoginSuccess, onNavigate }) {
         position: 'absolute',
         top: '20%',
         left: '20%',
-        width: '400px',
-        height: '400px',
+        width: 'clamp(250px, 40vw, 400px)',
+        height: 'clamp(250px, 40vw, 400px)',
         borderRadius: '50%',
         background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%)',
         filter: 'blur(60px)',
@@ -74,8 +74,8 @@ export default function LoginPage({ onLoginSuccess, onNavigate }) {
         position: 'absolute',
         bottom: '10%',
         right: '25%',
-        width: '350px',
-        height: '350px',
+        width: 'clamp(220px, 35vw, 350px)',
+        height: 'clamp(220px, 35vw, 350px)',
         borderRadius: '50%',
         background: 'radial-gradient(circle, rgba(236, 72, 153, 0.15) 0%, transparent 70%)',
         filter: 'blur(50px)',
@@ -86,13 +86,13 @@ export default function LoginPage({ onLoginSuccess, onNavigate }) {
         width: '100%',
         maxWidth: '480px',
         borderRadius: 'var(--radius-xl)',
-        padding: '36px',
+        padding: 'clamp(22px, 5vw, 36px)',
         boxShadow: 'var(--shadow-subtle)',
         position: 'relative',
         zIndex: 1
       }}>
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -103,15 +103,15 @@ export default function LoginPage({ onLoginSuccess, onNavigate }) {
             color: 'var(--primary-light)',
             fontSize: '12px',
             fontWeight: 600,
-            marginBottom: '12px',
+            marginBottom: '10px',
             border: '1px solid rgba(99, 102, 241, 0.25)'
           }}>
             <ShieldCheck size={14} /> Hệ thống xác thực Supabase bảo mật
           </div>
-          <h2 style={{ fontSize: '26px', fontWeight: 800, marginBottom: '6px', color: '#fff' }}>
+          <h2 style={{ fontSize: 'clamp(21px, 4.5vw, 26px)', fontWeight: 800, marginBottom: '6px', color: '#fff' }}>
             {mode === 'login' ? 'Đăng nhập tài khoản' : 'Tạo tài khoản mới'}
           </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 'clamp(12px, 2.5vw, 14px)' }}>
             {mode === 'login' ? 'Đăng nhập bằng Email & Mật khẩu để tiếp tục' : 'Đăng ký tài khoản mới để đặt vé & quản lý sự kiện'}
           </p>
         </div>

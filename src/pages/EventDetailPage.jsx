@@ -14,7 +14,9 @@ import {
   AlertTriangle,
   CreditCard,
   Ticket,
-  ShoppingCart
+  ShoppingCart,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -62,6 +64,8 @@ export default function EventDetailPage({
   const [activeTab, setActiveTab] = useState('booking');
   // 'booking' | 'payment' | 'success'
   const [bookingStep, setBookingStep] = useState('booking');
+  // State mở drawer chi tiết trên mobile bottom bar
+  const [isMobileSummaryOpen, setIsMobileSummaryOpen] = useState(false);
 
   // SEATED-BASED STATE
   const [occupiedSeats, setOccupiedSeats] = useState(
@@ -644,193 +648,242 @@ export default function EventDetailPage({
   }
 
   return (
-    <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '24px' }}>
-
+    <div
+      className="event-detail-page-container"
+      style={{
+        maxWidth: '1280px',
+        margin: '0 auto',
+        padding: 'clamp(12px, 3vw, 24px)',
+        paddingBottom: (hasSelections && activeTab === 'booking' && bookingStep === 'booking' && !isUpcoming)
+          ? 'clamp(90px, 15vw, 120px)'
+          : '32px'
+      }}
+    >
       {/* Top back button */}
       <button
         onClick={onBack}
+        className="event-back-btn"
         style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '8px 16px',
+          padding: '8px 14px',
           borderRadius: 'var(--radius-md)',
           backgroundColor: 'rgba(255, 255, 255, 0.05)',
           color: 'var(--text-muted)',
-          fontSize: '14px',
+          fontSize: '13px',
           fontWeight: 600,
-          marginBottom: '20px',
-          border: '1px solid var(--border-color)'
+          marginBottom: '16px',
+          border: '1px solid var(--border-color)',
+          cursor: 'pointer',
+          transition: 'var(--transition)'
         }}
       >
-        <ArrowLeft size={16} />
-        Quay lại danh sách sự kiện
+        <ArrowLeft size={15} />
+        <span>Quay lại danh sách sự kiện</span>
       </button>
 
       {/* EVENT BANNER HEADER */}
-      <div style={{
-        position: 'relative',
-        borderRadius: 'var(--radius-xl)',
-        overflow: 'hidden',
-        minHeight: '280px',
-        display: 'flex',
-        alignItems: 'flex-end',
-        padding: '32px',
-        marginBottom: '28px',
-        border: '1px solid var(--border-color)',
-        backgroundImage: `url(${event.banner})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center'
-      }}>
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'linear-gradient(to top, #0a0d14 0%, rgba(10, 13, 20, 0.8) 50%, rgba(10, 13, 20, 0.3) 100%)'
-        }} />
+      <div
+        className="event-banner-card"
+        style={{
+          position: 'relative',
+          borderRadius: 'var(--radius-xl)',
+          overflow: 'hidden',
+          minHeight: 'clamp(210px, 30vw, 290px)',
+          display: 'flex',
+          alignItems: 'flex-end',
+          padding: 'clamp(16px, 4vw, 32px)',
+          marginBottom: 'clamp(18px, 3.5vw, 28px)',
+          border: '1px solid var(--border-color)',
+          backgroundImage: `url(${event.banner})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          boxShadow: 'var(--shadow-subtle)'
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(to top, #0a0d14 0%, rgba(10, 13, 20, 0.85) 60%, rgba(10, 13, 20, 0.4) 100%)'
+          }}
+        />
 
         <div style={{ position: 'relative', zIndex: 2, width: '100%' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
-            <span className={isSeated ? 'badge-type-seated' : 'badge-type-zone'} style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 12px',
-              borderRadius: 'var(--radius-full)',
-              fontSize: '12px',
-              fontWeight: 700
-            }}>
-              {isSeated ? <Armchair size={14} /> : <Layers size={14} />}
-              {isSeated ? 'Sự kiện Seated-based (chọn tối đa 5 ghế)' : 'Sự kiện Zone-based (Đặt vé tối đa 5 vé)'}
-            </span>
-            {isUpcoming && (
-              <span className="badge-status-upcoming" style={{
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+            <span
+              className={isSeated ? 'badge-type-seated' : 'badge-type-zone'}
+              style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '4px 12px',
+                padding: '4px 10px',
                 borderRadius: 'var(--radius-full)',
-                fontSize: '12px',
+                fontSize: '11px',
                 fontWeight: 700
-              }}>
-                <Clock size={14} />
+              }}
+            >
+              {isSeated ? <Armchair size={13} /> : <Layers size={13} />}
+              {isSeated ? 'Seated-based (max 5 ghế)' : 'Zone-based (max 5 vé)'}
+            </span>
+            {isUpcoming && (
+              <span
+                className="badge-status-upcoming"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-full)',
+                  fontSize: '11px',
+                  fontWeight: 700
+                }}
+              >
+                <Clock size={13} />
                 Sắp diễn ra - Chưa mở bán
               </span>
             )}
           </div>
 
-          <h1 style={{ fontSize: '32px', fontWeight: 800, color: '#fff', marginBottom: '12px', lineHeight: 1.25 }}>
+          <h1
+            style={{
+              fontSize: 'clamp(20px, 4vw, 32px)',
+              fontWeight: 800,
+              color: '#fff',
+              marginBottom: '12px',
+              lineHeight: 1.25,
+              textShadow: '0 2px 10px rgba(0,0,0,0.7)',
+              wordBreak: 'break-word'
+            }}
+          >
             {event.title}
           </h1>
 
-          <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '24px',
-            fontSize: '14px',
-            color: 'var(--text-muted)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Calendar size={18} color="var(--primary-light)" />
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 'clamp(8px, 2vw, 16px)',
+              fontSize: 'clamp(12px, 2vw, 13.5px)',
+              color: 'var(--text-muted)'
+            }}
+          >
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(0,0,0,0.38)', padding: '5px 10px', borderRadius: 'var(--radius-sm)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <Calendar size={15} color="var(--primary-light)" />
               <span>{eventDate || event.date}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Clock size={18} color="var(--primary-light)" />
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(0,0,0,0.38)', padding: '5px 10px', borderRadius: 'var(--radius-sm)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <Clock size={15} color="var(--primary-light)" />
               <span>{eventTime}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <MapPin size={18} color="var(--accent-pink)" />
-              <span>{eventVenue || event.venue}</span>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(0,0,0,0.38)', padding: '5px 10px', borderRadius: 'var(--radius-sm)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <MapPin size={15} color="var(--accent-pink)" />
+              <span style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eventVenue || event.venue}</span>
             </div>
           </div>
         </div>
       </div>
 
-
-
       {/* TABS SELECTOR */}
-      <div style={{
-        display: 'flex',
-        gap: '12px',
-        marginBottom: '24px',
-        borderBottom: '1px solid var(--border-color)',
-        paddingBottom: '12px'
-      }}>
+      <div
+        className="tabs-selector-bar"
+        style={{
+          display: 'flex',
+          gap: '8px',
+          marginBottom: '20px',
+          borderBottom: '1px solid var(--border-color)',
+          paddingBottom: '10px',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none'
+        }}
+      >
         <button
           onClick={() => setActiveTab('booking')}
           style={{
-            padding: '10px 20px',
+            padding: '9px clamp(12px, 2.5vw, 18px)',
             borderRadius: 'var(--radius-md)',
             fontWeight: 700,
-            fontSize: '15px',
+            fontSize: 'clamp(13px, 2vw, 14px)',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: '6px',
             backgroundColor: activeTab === 'booking' ? 'var(--primary)' : 'transparent',
-            color: activeTab === 'booking' ? '#fff' : 'var(--text-muted)'
+            color: activeTab === 'booking' ? '#fff' : 'var(--text-muted)',
+            whiteSpace: 'nowrap',
+            cursor: 'pointer'
           }}
         >
-          <Ticket size={18} />
+          <Ticket size={16} />
           {isSeated ? 'Sơ đồ chọn ghế' : 'Chọn khu vực & Đặt vé'}
         </button>
         <button
           onClick={() => setActiveTab('info')}
           style={{
-            padding: '10px 20px',
+            padding: '9px clamp(12px, 2.5vw, 18px)',
             borderRadius: 'var(--radius-md)',
             fontWeight: 700,
-            fontSize: '15px',
+            fontSize: 'clamp(13px, 2vw, 14px)',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: '6px',
             backgroundColor: activeTab === 'info' ? 'var(--primary)' : 'transparent',
-            color: activeTab === 'info' ? '#fff' : 'var(--text-muted)'
+            color: activeTab === 'info' ? '#fff' : 'var(--text-muted)',
+            whiteSpace: 'nowrap',
+            cursor: 'pointer'
           }}
         >
-          <Info size={18} />
+          <Info size={16} />
           Giới thiệu & Quy định
         </button>
       </div>
 
       {/* TAB: GIỚI THIỆU */}
       {activeTab === 'info' && (
-        <div className="glass-panel animate-fade-in" style={{
-          padding: '32px',
-          borderRadius: 'var(--radius-lg)',
-          display: 'grid',
-          gridTemplateColumns: '1fr',
-          gap: '32px'
-        }}>
+        <div
+          className="glass-panel animate-fade-in"
+          style={{
+            padding: 'clamp(18px, 4vw, 32px)',
+            borderRadius: 'var(--radius-lg)',
+            display: 'grid',
+            gridTemplateColumns: '1fr',
+            gap: '24px'
+          }}
+        >
           <div>
-            <h3 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '14px', color: '#fff' }}>
+            <h3 style={{ fontSize: 'clamp(18px, 3.5vw, 22px)', fontWeight: 800, marginBottom: '14px', color: '#fff' }}>
               Mô tả chi tiết sự kiện
             </h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '15px', lineHeight: 1.7, whiteSpace: 'pre-line', marginBottom: '24px' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14.5px', lineHeight: 1.7, whiteSpace: 'pre-line', marginBottom: '24px' }}>
               {event.description}
             </p>
 
-            <h4 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '12px', color: 'var(--primary-light)' }}>
+            <h4 style={{ fontSize: '15.5px', fontWeight: 700, marginBottom: '12px', color: 'var(--primary-light)' }}>
               Điểm nhấn nổi bật:
             </h4>
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '28px' }}>
               {event.highlights?.map((h, i) => (
                 <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)', fontSize: '14px' }}>
-                  <CheckCircle2 size={16} color="var(--accent-emerald)" />
-                  {h}
+                  <CheckCircle2 size={16} color="var(--accent-emerald)" style={{ flexShrink: 0 }} />
+                  <span>{h}</span>
                 </li>
               ))}
             </ul>
 
-            <h4 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '12px', color: 'var(--accent-amber)' }}>
+            <h4 style={{ fontSize: '15.5px', fontWeight: 700, marginBottom: '12px', color: 'var(--accent-amber)' }}>
               Quy định tham gia sự kiện:
             </h4>
-            <div style={{
-              backgroundColor: 'rgba(245, 158, 11, 0.08)',
-              border: '1px solid rgba(245, 158, 11, 0.25)',
-              padding: '16px',
-              borderRadius: 'var(--radius-md)'
-            }}>
+            <div
+              style={{
+                backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                padding: 'clamp(12px, 3vw, 18px)',
+                borderRadius: 'var(--radius-md)'
+              }}
+            >
               {event.rules?.map((r, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '6px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
                   <AlertTriangle size={15} color="var(--accent-amber)" style={{ marginTop: '2px', flexShrink: 0 }} />
                   <span>{r}</span>
                 </div>
@@ -842,24 +895,26 @@ export default function EventDetailPage({
 
       {/* TAB: BOOKING - Bước 1: Chọn vé */}
       {activeTab === 'booking' && bookingStep === 'booking' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '28px' }} className="booking-layout-grid">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }} className="booking-layout-grid">
 
           {/* CỘT TRÁI */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '28px' }}>
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: 'clamp(16px, 3.5vw, 28px)' }}>
             {/* Header thông báo */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '12px 18px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: isUpcoming ? 'rgba(245, 158, 11, 0.1)' : 'rgba(99, 102, 241, 0.1)',
-              border: isUpcoming ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid rgba(99, 102, 241, 0.25)',
-              marginBottom: '24px'
-            }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: isUpcoming ? 'rgba(245, 158, 11, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+                border: isUpcoming ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid rgba(99, 102, 241, 0.25)',
+                marginBottom: '24px'
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <ShieldCheck size={20} color={isUpcoming ? "var(--accent-amber)" : "var(--primary-light)"} />
-                <span style={{ fontSize: '14px', fontWeight: 600 }}>
+                <ShieldCheck size={20} color={isUpcoming ? "var(--accent-amber)" : "var(--primary-light)"} style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: '13.5px', fontWeight: 600, lineHeight: 1.4 }}>
                   {isUpcoming
                     ? 'Sự kiện sắp diễn ra - Hệ thống chưa mở bán vé chính thức.'
                     : (isSeated
@@ -872,44 +927,47 @@ export default function EventDetailPage({
             {/* SEATED-BASED: Sơ đồ ghế (1 loại ghế duy nhất) */}
             {isSeated && (
               <div>
-                <div style={{ textAlign: 'center', marginBottom: '36px' }}>
-                  <div style={{
-                    margin: '0 auto 8px',
-                    width: '80%',
-                    height: '16px',
-                    borderRadius: '8px 8px 50% 50%',
-                    background: 'linear-gradient(90deg, #ec4899 0%, #6366f1 50%, #ec4899 100%)',
-                    boxShadow: '0 0 25px rgba(236, 72, 153, 0.5)'
-                  }} />
-                  <span style={{ fontSize: '12px', letterSpacing: '3px', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 700 }}>
+                <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+                  <div
+                    style={{
+                      margin: '0 auto 8px',
+                      width: 'clamp(200px, 70%, 420px)',
+                      height: '14px',
+                      borderRadius: '8px 8px 50% 50%',
+                      background: 'linear-gradient(90deg, #ec4899 0%, #6366f1 50%, #ec4899 100%)',
+                      boxShadow: '0 0 25px rgba(236, 72, 153, 0.5)'
+                    }}
+                  />
+                  <span style={{ fontSize: '11px', letterSpacing: '3px', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 700 }}>
                     SÂN KHẤU CHÍNH (STAGE)
                   </span>
                 </div>
 
-                <div style={{
-                  display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '16px',
-                  marginBottom: '28px', padding: '12px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-secondary)'
-                }}>
+                {/* Chú thích màu ghế */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                    gap: '12px',
+                    marginBottom: '20px',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)'
+                  }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                    <div style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: singleSeatTier.color }} />
+                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', backgroundColor: singleSeatTier.color }} />
                     <span style={{ fontWeight: 600 }}>{singleSeatTier.name}</span>
                     <span style={{ color: 'var(--text-muted)' }}>({formatVND(singleSeatTier.price)})</span>
-                    <span style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      padding: '2px 7px',
-                      borderRadius: '4px',
-                      backgroundColor: 'rgba(99, 102, 241, 0.2)',
-                      color: 'var(--primary-light)',
-                      border: '1px solid rgba(99, 102, 241, 0.3)'
-                    }}>1 loại ghế duy nhất</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                    <div style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#334155' }} />
+                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', backgroundColor: '#334155' }} />
                     <span style={{ color: 'var(--text-dim)' }}>Đã bán</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                    <div style={{ width: '14px', height: '14px', borderRadius: '4px', border: '2px solid #fff', backgroundColor: 'var(--accent-pink)' }} />
+                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', border: '2px solid #fff', backgroundColor: 'var(--accent-pink)' }} />
                     <span style={{ color: '#fff', fontWeight: 700 }}>Đang chọn</span>
                   </div>
                 </div>
@@ -982,8 +1040,8 @@ export default function EventDetailPage({
                   </div>
                 </div>
 
-                <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12px', color: 'var(--text-dim)' }}>
-                  * Nhấp chuột vào ghế trống để chọn hoặc bỏ chọn. Sự kiện áp dụng đồng giá <strong>{formatVND(singleSeatTier.price)}</strong> cho toàn bộ 56 ghế. Tối đa 5 ghế cho mỗi khách hàng.
+                <div style={{ textAlign: 'center', marginTop: '14px', fontSize: '12px', color: 'var(--text-dim)' }}>
+                  * Nhấp vào ghế trống để chọn hoặc bỏ chọn. Đồng giá <strong>{formatVND(singleSeatTier.price)}</strong> / ghế. Tối đa 5 ghế.
                 </div>
 
               </div>
@@ -1080,8 +1138,8 @@ export default function EventDetailPage({
             )}
           </div>
 
-          {/* CỘT PHẢI: TỔNG QUAN ĐẶT VÉ */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', height: 'fit-content', position: 'sticky', top: '90px' }}>
+          {/* CỘT PHẢI: TỔNG QUAN ĐẶT VÉ (STICKY DESKTOP, EMBEDDED MOBILE) */}
+          <div className="glass-panel booking-summary-panel" style={{ borderRadius: 'var(--radius-lg)', padding: 'clamp(16px, 3.5vw, 24px)', height: 'fit-content' }}>
             <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '16px', color: '#fff', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               Thông tin đặt vé
             </h3>
@@ -1137,14 +1195,14 @@ export default function EventDetailPage({
               </div>
             )}
 
-            <div style={{ paddingTop: '16px', borderTop: '1px solid var(--border-color)', marginBottom: '24px' }}>
+            <div style={{ paddingTop: '16px', borderTop: '1px solid var(--border-color)', marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
                 <span>Phí tiện ích / VAT:</span>
                 <span>0 đ (Miễn phí)</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>Tổng thanh toán:</span>
-                <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--accent-pink)' }}>{formatVND(totalPrice)}</span>
+                <span style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>Tổng thanh toán:</span>
+                <span style={{ fontSize: 'clamp(18px, 3.5vw, 22px)', fontWeight: 800, color: 'var(--accent-pink)' }}>{formatVND(totalPrice)}</span>
               </div>
             </div>
 
@@ -1154,46 +1212,6 @@ export default function EventDetailPage({
                 <span>Bạn cần đăng nhập để hoàn tất giữ chỗ và nhận vé qua email.</span>
               </div>
             )}
-            {/* <button
-              onClick={isReserved ? handlePayment : handleReserveSeats}
-              disabled={!hasSelections || isProcessingPayment || isUpcoming}
-              className="glow-btn-pink"
-              style={{
-                width: '100%', padding: '14px', fontSize: '15px', fontWeight: 700,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
-                opacity: (!hasSelections || isProcessingPayment || isUpcoming) ? 0.6 : 1,
-                cursor: (!hasSelections || isProcessingPayment || isUpcoming) ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isProcessingPayment ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', width: '18px', height: '18px' }} />
-                  Đang kết nối PayOS...
-                </div>
-              ) : isUpcoming ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AlertTriangle size={18} />
-                  Sự kiện chưa mở bán
-                </div>
-              ) : isReserved ? (
-                // TRẠNG THÁI 2: ĐÃ GIỮ GHẾ -> HIỂN THỊ NÚT THANH TOÁN VÀ ĐỒNG HỒ ĐẾM NGƯỢC
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CreditCard size={18} />
-                    {user ? `Thanh toán qua PayOS • ${formatVND(totalPrice)}` : 'Đăng nhập & Thanh toán'}
-                  </div>
-                  <span style={{ fontSize: '12px', color: '#ffeb3b', fontWeight: 500 }}>
-                    ⏱️ Giữ ghế thành công! Hết hạn sau: {formatCountdown(countdownSeconds)}
-                  </span>
-                </div>
-              ) : (
-                // TRẠNG THÁI 1: CHƯA GIỮ GHẾ -> HIỂN THỊ NÚT GIỮ GHẾ
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <CreditCard size={18} />
-                  {user ? 'Giữ chỗ ngay' : 'Đăng nhập & Giữ chỗ'}
-                </div>
-              )}
-            </button> */}
             <div>
               {/* Nút chính (Giữ chỗ hoặc Thanh toán) */}
               <button
@@ -1272,64 +1290,83 @@ export default function EventDetailPage({
 
       {/* ======== BƯỚC 3: THÀNH CÔNG ======== */}
       {bookingStep === 'success' && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '20px 0' }}>
-          <div className="glass-panel animate-fade-in" style={{
-            maxWidth: '560px',
-            width: '100%',
-            borderRadius: 'var(--radius-xl)',
-            padding: '40px',
-            textAlign: 'center',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
-            boxShadow: '0 0 40px rgba(16, 185, 129, 0.15)'
-          }}>
-            <div style={{
-              width: '72px', height: '72px', borderRadius: '50%',
-              backgroundColor: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-emerald)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px'
-            }}>
-              <CheckCircle2 size={40} />
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 'clamp(10px, 3vw, 24px) 0' }}>
+          <div
+            className="glass-panel animate-fade-in"
+            style={{
+              maxWidth: '560px',
+              width: '100%',
+              borderRadius: 'var(--radius-xl)',
+              padding: 'clamp(20px, 5vw, 40px)',
+              textAlign: 'center',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              boxShadow: '0 0 40px rgba(16, 185, 129, 0.15)'
+            }}
+          >
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                color: 'var(--accent-emerald)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px'
+              }}
+            >
+              <CheckCircle2 size={36} />
             </div>
 
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 14px', borderRadius: 'var(--radius-full)', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontSize: '12px', fontWeight: 700, marginBottom: '16px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 14px', borderRadius: 'var(--radius-full)', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontSize: '12px', fontWeight: 700, marginBottom: '14px' }}>
               <ShieldCheck size={14} /> Thanh toán thành công
             </div>
 
-            <h3 style={{ fontSize: '26px', fontWeight: 800, marginBottom: '10px', color: '#fff' }}>
+            <h3 style={{ fontSize: 'clamp(20px, 4.5vw, 26px)', fontWeight: 800, marginBottom: '10px', color: '#fff' }}>
               Đặt vé thành công! 🎉
             </h3>
 
-            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '28px', lineHeight: 1.6 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13.5px', marginBottom: '24px', lineHeight: 1.6 }}>
               Mã vé điện tử (E-Ticket) đã được gửi đến <strong style={{ color: '#fff' }}>{user?.email}</strong>.
               Vé cũng đã được lưu vào <strong style={{ color: 'var(--accent-cyan)' }}>Giỏ hàng</strong> của bạn.
             </p>
 
             {/* Chi tiết vé */}
-            <div style={{
-              backgroundColor: 'var(--bg-secondary)', padding: '20px', borderRadius: 'var(--radius-md)',
-              textAlign: 'left', fontSize: '13px', marginBottom: '28px',
-              display: 'flex', flexDirection: 'column', gap: '8px',
-              border: '1px solid var(--border-color)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-dim)' }}>Sự kiện:</span>
-                <span style={{ fontWeight: 700, color: '#fff', textAlign: 'right', maxWidth: '240px' }}>{event.title}</span>
+            <div
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                padding: 'clamp(14px, 3vw, 20px)',
+                borderRadius: 'var(--radius-md)',
+                textAlign: 'left',
+                fontSize: '13px',
+                marginBottom: '24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                border: '1px solid var(--border-color)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                <span style={{ color: 'var(--text-dim)', flexShrink: 0 }}>Sự kiện:</span>
+                <span style={{ fontWeight: 700, color: '#fff', textAlign: 'right' }}>{event.title}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-dim)' }}>Thời gian:</span>
-                <span style={{ color: '#fff' }}>{eventDate} • {eventTime}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                <span style={{ color: 'var(--text-dim)', flexShrink: 0 }}>Thời gian:</span>
+                <span style={{ color: '#fff', textAlign: 'right' }}>{eventDate} • {eventTime}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-dim)' }}>Địa điểm:</span>
-                <span style={{ color: '#fff', textAlign: 'right', maxWidth: '240px' }}>{eventVenue}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                <span style={{ color: 'var(--text-dim)', flexShrink: 0 }}>Địa điểm:</span>
+                <span style={{ color: '#fff', textAlign: 'right' }}>{eventVenue}</span>
               </div>
               {isSeated ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-dim)' }}>Ghế đã giữ ({singleSeatTier.name}):</span>
-                  <span style={{ color: 'var(--accent-pink)', fontWeight: 700 }}>{selectedSeats.map(s => s.code).join(', ')}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                  <span style={{ color: 'var(--text-dim)', flexShrink: 0 }}>Ghế ({singleSeatTier.name}):</span>
+                  <span style={{ color: 'var(--accent-pink)', fontWeight: 700, textAlign: 'right' }}>{selectedSeats.map(s => s.code).join(', ')}</span>
                 </div>
               ) : (
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-dim)' }}>Số lượng:</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                  <span style={{ color: 'var(--text-dim)', flexShrink: 0 }}>Số lượng:</span>
                   <span style={{ color: 'var(--accent-pink)', fontWeight: 700 }}>{totalZoneCount} vé</span>
                 </div>
               )}
@@ -1343,9 +1380,9 @@ export default function EventDetailPage({
               <button
                 onClick={() => { onBack && onBack(); }}
                 style={{
-                  flex: 1, padding: '12px', borderRadius: 'var(--radius-md)',
+                  flex: 1, minWidth: '140px', padding: '12px', borderRadius: 'var(--radius-md)',
                   backgroundColor: 'rgba(255, 255, 255, 0.06)', color: '#fff',
-                  fontSize: '14px', fontWeight: 600, border: '1px solid var(--border-color)'
+                  fontSize: '13.5px', fontWeight: 600, border: '1px solid var(--border-color)'
                 }}
               >
                 Về trang sự kiện
@@ -1356,7 +1393,7 @@ export default function EventDetailPage({
                   else if (onBack) onBack();
                 }}
                 className="glow-btn-primary"
-                style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-md)', fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                style={{ flex: 1, minWidth: '140px', padding: '12px', borderRadius: 'var(--radius-md)', fontSize: '13.5px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
               >
                 <ShoppingCart size={16} />
                 Xem Giỏ hàng
@@ -1366,12 +1403,123 @@ export default function EventDetailPage({
         </div>
       )}
 
+      {/* Scoped CSS for EventDetailPage responsiveness */}
       <style>{`
+        /* Desktop layout */
         @media (min-width: 992px) {
           .booking-layout-grid {
             grid-template-columns: 1fr 340px !important;
           }
+          .booking-summary-panel {
+            position: sticky !important;
+            top: 90px !important;
+          }
+          .mobile-scroll-hint {
+            display: none !important;
+          }
+          .mobile-floating-checkout-bar {
+            display: none !important;
+          }
         }
+
+        /* Tablet & Mobile layout */
+        @media (max-width: 991px) {
+          .booking-summary-panel {
+            position: static !important;
+            margin-top: 8px !important;
+          }
+        }
+
+        /* Seating chart sizing */
+        .row-label {
+          width: 22px;
+          font-size: 13px;
+        }
+        .seat-btn {
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          font-size: 11px;
+        }
+        .seat-btn:active {
+          transform: scale(0.92) !important;
+        }
+
+        /* Small screens: scale seat buttons so all 56 seats fit on mobile without forced scroll */
+        @media (max-width: 520px) {
+          .row-label {
+            width: 16px !important;
+            font-size: 11px !important;
+          }
+          .seat-row-btns {
+            gap: 4px !important;
+          }
+          .seating-row {
+            gap: 4px !important;
+          }
+          .seat-btn {
+            width: 31px !important;
+            height: 31px !important;
+            border-radius: 6px !important;
+            font-size: 10px !important;
+          }
+        }
+
+        @media (max-width: 360px) {
+          .row-label {
+            width: 14px !important;
+            font-size: 10px !important;
+          }
+          .seat-row-btns {
+            gap: 3px !important;
+          }
+          .seat-btn {
+            width: 26px !important;
+            height: 26px !important;
+            font-size: 9px !important;
+            border-radius: 4px !important;
+          }
+        }
+
+        /* Zone item responsiveness */
+        .zone-item-card {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 16px;
+          padding: 18px 20px;
+          border-radius: var(--radius-md);
+          background-color: var(--bg-secondary);
+          transition: var(--transition);
+        }
+        .zone-item-info {
+          flex: 1;
+          min-width: 220px;
+        }
+        .zone-item-action {
+          display: flex;
+          align-items: center;
+          gap: 20px;
+        }
+
+        @media (max-width: 560px) {
+          .zone-item-card {
+            padding: 14px 16px;
+            gap: 12px;
+          }
+          .zone-item-info {
+            width: 100% !important;
+            min-width: 100% !important;
+          }
+          .zone-item-action {
+            width: 100% !important;
+            justify-content: space-between !important;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+          }
+        }
+
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
