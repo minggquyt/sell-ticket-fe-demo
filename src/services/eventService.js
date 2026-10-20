@@ -57,9 +57,9 @@ export function normalizeEvent(raw) {
     rules: Array.isArray(raw.rules) ? raw.rules : [],
     seatTiers: isSeated ? [singleSeatTier] : [],
     zones: raw.zones || (isSeated ? [] : [
-      { id: 'vip', name: 'Khu VIP (Sát sân khấu)', price: maxPriceNum || 1500000, color: '#ec4899', available: 50 },
-      { id: 'standard', name: 'Khu Tiêu Chuẩn (GA)', price: minPriceNum || 650000, color: '#06b6d4', available: 200 }
-    ])
+        { id: 'vip', name: 'Khu VIP (Sát sân khấu)', price: maxPriceNum || 1500000, color: '#ec4899', available: 50 },
+        { id: 'regular', name: 'Khu Tiêu Chuẩn (GA)', price: minPriceNum || 650000, color: '#06b6d4', available: 200 }
+      ]) // MISS FIELD IN RAW DATA
   };
 }
 
@@ -77,7 +77,7 @@ export async function fetchEvents() {
     const result = await res.json();
     const data = result.data || result;
     if (!Array.isArray(data)) return [];
-    return data.map(normalizeEvent);
+    return data.map(normalizeEvent); // DÒNG NÀY ĐỂ LÀM GÌ ?
   } catch (err) {
     console.error('❌ Lỗi kết nối Backend /api/events:', err);
     return [];
@@ -218,6 +218,34 @@ export async function holdZones(eventId, zones, token) {
     body: JSON.stringify({ eventId, zones })
   });
   return res.json();
+}
+
+/**
+ * Gọi API lên Backend để hủy giữ chỗ / nhả ghế
+ * @param {string} userId - ID của người dùng
+ * @param {Array<string>} seatIds - Danh sách ID các ghế cần nhả
+ * @param {string} token - Bearer token xác thực
+ */
+export async function releaseSeats(userId, seatIds, token) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/seats/release`, { 
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ userId, seatIds })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Không thể hủy giữ ghế trên hệ thống.');
+    }
+    return data;
+  } catch (err) {
+    console.error('API releaseSeats error:', err);
+    throw err;
+  }
 }
 
 /**

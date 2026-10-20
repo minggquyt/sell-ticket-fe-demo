@@ -22,10 +22,16 @@ import {
   formatEventTime,
   isSeatedEvent,
   getEventVenue,
-  getSingleSeatTier,  
+  getSingleSeatTier,
   isUpcomingEvent
 } from '../data/events';
-import { fetchSeatsByEvent, holdSeats, holdZones, startCheckout } from '../services/eventService';
+import {
+  fetchSeatsByEvent,
+  holdSeats,
+  holdZones,
+  startCheckout,
+  releaseSeats
+} from '../services/eventService';
 
 export default function EventDetailPage({
   event,
@@ -62,16 +68,10 @@ export default function EventDetailPage({
     () => initialOccupiedSeats ? new Set(initialOccupiedSeats) : new Set(['A-3', 'A-4', 'B-5', 'C-1', 'C-2', 'D-7', 'E-4', 'F-5'])
   );
   const [selectedSeats, setSelectedSeats] = useState([]);
-
-  // ZONE-BASED STATE
+  const [reservedZoneSeats, setReservedZoneSeats] = useState([]);
+  const [backendZones, setBackendZones] = useState({});
+  const [zoneRemaining, setZoneRemaining] = useState({});
   const [zoneQuantities, setZoneQuantities] = useState({});
-  // Track remaining vé theo zone
-  const [zoneRemaining, setZoneRemaining] = useState(() => {
-    if (initialZoneRemaining && Object.keys(initialZoneRemaining).length > 0) {
-      return { ...initialZoneRemaining };
-    }
-    return Object.fromEntries((event.zones || []).map(z => [z.id, z.remaining]));
-  });
 
   // Đồng bộ lại khi prop thay đổi (ví dụ đổi sự kiện)
   useEffect(() => {
@@ -91,25 +91,71 @@ export default function EventDetailPage({
   // Đồng bộ trực tiếp danh sách ghế từ Backend
   useEffect(() => {
     if (!event?.id) return;
+
     fetchSeatsByEvent(event.id)
       .then(seats => {
-        if (seats && seats.length > 0) {
+        if (!seats || seats.length === 0) return;
+        // 1. Phân loại logic cho SEATED-BASED
+        if (event.is_seated || event.event_type === "SEAT_BASED") {
           setBackendSeats(seats);
           const sold = seats
             .filter(s => s.status === 'SOLD' || s.status === 'RESERVED' || s.status === 'PAYMENT_PROCESSING')
             .map(s => {
               const num = s.seat_number;
-              if (/^[A-G]\d+$/.test(num)) {
-                return `${num.charAt(0)}-${num.slice(1)}`;
-              }
-              return num;
+              return /^[A-G]\d+$/.test(num) ? `${num.charAt(0)}-${num.slice(1)}` : num;
             });
           if (sold.length > 0) {
             setOccupiedSeats(prev => new Set([...prev, ...sold]));
           }
         }
-      }).catch(err => console.warn('Seats fetch error:', err));
+
+        // 2. Phân loại logic cho ZONE-BASED
+        else {
+          const zoneMap = {};
+          const remainingMap = {};
+
+          // Thuật toán gom nhóm theo zone_based
+          seats.forEach(seat => {
+            const zoneName = seat.zone_name || 'STANDARD'; // Lấy tên khu vực chuẩn từ BE
+            const price = Number(seat.price) || 0;
+            const isAvailable = seat.status === 'AVAILABLE';
+
+            if (!zoneMap[zoneName]) {
+              zoneMap[zoneName] = {
+                name: zoneName,
+                price: price,
+                total: 0,
+                remaining: 0,
+                color: getZoneColor(zoneName) // Hàm phụ trợ gán màu sắc giao diện
+              };
+            }
+
+            zoneMap[zoneName].total += 1;
+            if (isAvailable) {
+              zoneMap[zoneName].remaining += 1;
+            }
+          });
+
+          // Đổ dữ liệu vào state để render UI
+          setBackendZones(zoneMap);
+
+          // Tạo map remaining để map nhanh với state đếm số lượng chọn mua
+          Object.keys(zoneMap).forEach(zName => {
+            remainingMap[zName] = zoneMap[zName].remaining;
+          });
+          setZoneRemaining(remainingMap);
+        }
+      })
+      .catch(err => console.warn('Seats/Zones fetch error:', err));
   }, [event?.id]);
+
+  // Hàm hỗ trợ gán màu sắc đẹp mắt cho từng zone dựa theo tên
+  const getZoneColor = (name) => {
+    const upper = name.toUpperCase();
+    if (upper.includes('VIP')) return '#ec4899'; // Hồng
+    if (upper.includes('REGULAR') || upper.includes('STD')) return '#3b82f6'; // Xanh dương
+    return '#10b981'; // Xanh lá mặc định
+  };
 
   // Kiểm tra nếu được redirect về từ PayOS thành công
   useEffect(() => {
@@ -209,6 +255,7 @@ export default function EventDetailPage({
     return () => clearInterval(interval);
   }, [reservedUntilTime]);
 
+
   // Hàm format giây thành dạng MM:SS để hiển thị cho đẹp
   const formatCountdown = (totalSeconds) => {
     const minutes = Math.floor(totalSeconds / 60);
@@ -244,6 +291,46 @@ export default function EventDetailPage({
     }
   };
 
+  // --- HÀM XỬ LÝ HỦY GIỮ GHẾ (Đã tích hợp gọi API Backend) ---
+  const handleCancelReservation = async () => {
+    try {
+      const token = localStorage.getItem('token') || user?.token;
+
+      // Lấy danh sách seatIds đang được giữ tùy theo loại sự kiện
+      let seatIdsToRelease = [];
+      if (isSeated) {
+        seatIdsToRelease = selectedSeats.map(s => s.id).filter(Boolean);
+      } else {
+        seatIdsToRelease = reservedZoneSeats.map(s => s.id).filter(Boolean);
+      }
+
+      // Nếu có ID ghế, gọi API yêu cầu Backend nhả khóa ghế trong Database
+      if (seatIdsToRelease.length > 0 && user?.id) {
+        await releaseSeats(user.id, seatIdsToRelease, token);
+      }
+
+      // 1. Xóa dữ liệu giữ chỗ trong localStorage
+      const storageKey = `event_reservation_${event.id}`;
+      localStorage.removeItem(storageKey);
+
+      // 2. Reset lại toàn bộ state liên quan đến việc giữ ghế ở Frontend
+      setIsReserved(false);
+      setReservedUntilTime(null);
+
+      if (isSeated) {
+        setSelectedSeats([]);
+      } else {
+        setReservedZoneSeats([]);
+        setZoneQuantities({});
+      }
+
+      console.log("🚫 Đã hủy phiên giữ ghế thành công trên cả Database và Frontend.");
+    } catch (err) {
+      console.error("Lỗi khi hủy giữ ghế:", err);
+      alert('⚠️ ' + (err.message || 'Không thể hủy giữ ghế. Vui lòng thử lại!'));
+    }
+  };
+
   const totalSeatedPrice = selectedSeats.reduce((acc, curr) => {
     return acc + parseFloat(curr.price)
   }, 0);
@@ -252,9 +339,9 @@ export default function EventDetailPage({
   // --- LOGIC ZONE-BASED ---
   const totalZoneCount = Object.values(zoneQuantities).reduce((acc, val) => acc + (val || 0), 0);
 
-  const handleUpdateZoneQty = (zoneId, delta) => {
-    const current = zoneQuantities[zoneId] || 0;
-    const available = zoneRemaining[zoneId] ?? (event.zones?.find(z => z.id === zoneId)?.remaining || 0);
+  const handleUpdateZoneQty = (zoneName, delta) => {
+    const current = zoneQuantities[zoneName] || 0;
+    const available = zoneRemaining[zoneName] ?? (event.zones?.find(z => z.id === zoneName)?.remaining || 0);
 
     if (delta > 0) {
       if (totalZoneCount >= 5) {
@@ -267,16 +354,108 @@ export default function EventDetailPage({
       }
     }
     const nextVal = Math.max(0, current + delta);
-    setZoneQuantities(prev => ({ ...prev, [zoneId]: nextVal }));
+    setZoneQuantities(prev => {
+      const currentQty = prev[zoneName] || 0;
+      const newQty = Math.max(0, currentQty + delta);
+      return { ...prev, [zoneName]: newQty };
+    });
   };
 
-  const totalZonePrice = (event.zones || []).reduce((acc, z) => {
-    const qty = zoneQuantities[z.id] || 0;
-    return acc + (qty * z.price);
+
+  const totalZonePrice = Object.entries(zoneQuantities).reduce((acc, [zoneName, qty]) => {
+    // Lấy thông tin zone tương ứng từ state backendZones đã được fetch từ BE
+    const zoneInfo = backendZones[zoneName];
+    const price = zoneInfo ? Number(zoneInfo.price) : 0;
+
+    return acc + (qty * price);
   }, 0);
 
-  const totalPrice = isSeated ? totalSeatedPrice : totalZonePrice;
+  // Biến global lưu tổng số tiền vé mà user đang giữ
+  let totalPrice = isSeated ? totalSeatedPrice : totalZonePrice;
   const hasSelections = isSeated ? selectedSeats.length > 0 : totalZoneCount > 0;
+
+  // --- KHÔI PHỤC PHIÊN GIỮ GHẾ KHI REFRESH (SEATED-BASED) ---
+  useEffect(() => {
+    if (!event?.id || !user?.id) return;
+
+    const storageKey = `event_reservation_${event.id}`;
+    const savedReservation = localStorage.getItem(storageKey);
+
+    if (!savedReservation) return;
+
+    try {
+      const parsedData = JSON.parse(savedReservation);
+      const now = new Date();
+      const expiryTime = new Date(parsedData.reservedUntil);
+
+      // Kiểm tra xem phiên giữ ghế còn hạn và có đúng là của user hiện tại không
+      if (expiryTime > now && parsedData.userId === user.id) {
+        // KHÔI PHỤC CHO EVENT SEAT_BASED
+        if (isSeated) {
+          // 1. Cập nhật trạng thái giữ ghế & thời gian đếm ngược
+          setIsReserved(true);
+          setReservedUntilTime(parsedData.reservedUntil);
+
+          // 2. Khôi phục lại mảng selectedSeats chuẩn theo cấu trúc của handleToggleSeat
+          if (parsedData.seats && Array.isArray(parsedData.seats)) {
+            const restoredSeats = parsedData.seats.map(seat => {
+              const seatCode = seat.seat_number;
+              // Tìm tier hoặc fallback về singleSeatTier
+              const tierName = seat.zone_name || singleSeatTier.name || 'Standard';
+
+              return {
+                id: seat.id,
+                code: seatCode,
+                tier: tierName,
+                price: seat.price,
+                color: singleSeatTier.color || '#3b82f6'
+              };
+            });
+
+            // cập nhập lại biến global totalPrice: 
+            totalPrice = restoredSeats.reduce((acc, curr) => {
+              return acc + parseFloat(curr.price)
+            }, 0);
+
+            setSelectedSeats(restoredSeats);
+          }
+        }
+        else {
+          // KHÔI PHỤC GHẾ CHO EVENT ZONE_BASED
+          // 1. Cập nhật trạng thái giữ ghế & thời gian đếm ngược
+          setIsReserved(true);
+          setReservedUntilTime(parsedData.reservedUntil);
+
+          // 2. Khôi phục danh sách ghế trả về từ DB để phục vụ bước thanh toán (handlePayment)
+          if (parsedData.seats && Array.isArray(parsedData.seats)) {
+            setReservedZoneSeats(parsedData.seats);
+
+            // 3. Khôi phục lại số lượng vé đã chọn theo từng zone (zoneQuantities) dựa trên các ghế đã lưu
+            const restoredQuantities = {};
+            parsedData.seats.forEach(seat => {
+              const zoneName = seat.zone_name;
+              if (zoneName) {
+                restoredQuantities[zoneName] = (restoredQuantities[zoneName] || 0) + 1;
+              }
+            });
+
+            // cập nhập lại biến global totalPrice: 
+            totalPrice = parsedData.seats.reduce((acc, seat) => {
+              return acc + parseFloat(seat.price || 0);
+            }, 0);
+
+            setZoneQuantities(restoredQuantities);
+          }
+        }
+      } else {
+        // Nếu đã quá hạn hoặc khác user -> Xóa rác trong localStorage
+        localStorage.removeItem(storageKey);
+      }
+    } catch (err) {
+      console.error("Lỗi khi đọc dữ liệu giữ ghế từ localStorage:", err);
+      localStorage.removeItem(storageKey);
+    }
+  }, [event?.id, user?.id, isSeated]);
 
   // --- XỬ LÝ GIỮ GHẾ ---
   const handleReserveSeats = async () => {
@@ -312,12 +491,23 @@ export default function EventDetailPage({
           throw new Error(holdRes.message || 'Không thể giữ các ghế đã chọn');
         }
 
-        // Nhận response thành công từ server chứa reserved_until
+        // Lưu thông tin các ghế đang giữ vào localStorage: 
         const expiry = holdRes?.data?.reserved_until || holdRes?.reserved_until;
+        const heldSeatsData = holdRes?.data?.seats || [];
+
         if (expiry) {
           setReservedUntilTime(expiry);
-          setIsReserved(true); // Đánh dấu đã giữ ghế thành công
-        } else {
+          setIsReserved(true);
+
+          // 🔑 LƯU VÀO LOCALSTORAGE ĐỂ CHỐNG MẤT KHI REFRESH TRANG
+          const storageKey = `event_reservation_${event.id}`;
+          localStorage.setItem(storageKey, JSON.stringify({
+            userId: user?.id,
+            reservedUntil: expiry,
+            seats: heldSeatsData
+          }));
+        }
+        else {
           throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
         }
 
@@ -328,24 +518,40 @@ export default function EventDetailPage({
           .filter(([, qty]) => qty > 0)
           .map(([zoneId, qty]) => {
             const zoneObj = event.zones?.find(z => z.id === zoneId);
-            console.log(zoneObj)
             return { zone_name: zoneObj?.id.toUpperCase() || zoneId, quantity: qty };
           });
 
-          console.log(selections)
-
 
         const holdRes = await holdZones(event.id, selections, token);
-        console.log(holdRes)
         if (holdRes && holdRes.success === false) {
-          
           throw new Error(holdRes.message || 'Không thể giữ chỗ theo khu vực đã chọn');
         }
 
+        // LẤY THÔNG TIN GHẾ SERVER TRẢ VỀ LƯU VÀO STATE
+        const returnedSeats = holdRes?.data?.seats || [];
+        const returnedSeatIds = holdRes?.data?.seatIds || [];
         const expiry = holdRes?.data?.reserved_until || holdRes?.reserved_until;
+
+        if (returnedSeatIds.length === 0) {
+          throw new Error('Không nhận được thời gian giữ chỗ hoặc danh sách ghế từ hệ thống.');
+        }
+
+        if (returnedSeatIds.length > 0) {
+          setReservedZoneSeats(returnedSeats); // Lưu object ghế vào state để lát thanh toán
+          setReservedUntilTime(expiry);
+          setIsReserved(true);
+        }
+
         if (expiry) {
           setReservedUntilTime(expiry);
           setIsReserved(true);
+
+          const storageKey = `event_reservation_${event.id}`;
+          localStorage.setItem(storageKey, JSON.stringify({
+            userId: user?.id,
+            reservedUntil: expiry,
+            seats: returnedSeats
+          }));
         } else {
           throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
         }
@@ -361,11 +567,29 @@ export default function EventDetailPage({
     try {
       setIsProcessingPayment(true);
       const token = localStorage.getItem('token') || user?.token;
+      let seatIdsToCheckout = [];
+      if (isSeated) {
+        // --- LUỒNG SEATED-BASED ---
+        seatIdsToCheckout = selectedSeats.map(s => s.id).filter(Boolean);
 
-      let seatIdsToCheckout = selectedSeats.map(s => s.id).filter(Boolean);
+        if (seatIdsToCheckout.length === 0) {
+          seatIdsToCheckout = selectedSeats.map(s => {
+            const found = backendSeats.find(bs => bs.seat_number === s.code || bs.seat_number === s.code.replace('-', ''));
+            return found?.id;
+          }).filter(Boolean);
+        }
+      } else {
+        // --- LUỒNG ZONE-BASED ---
+        seatIdsToCheckout = reservedZoneSeats.map(s => s.id).filter(Boolean);
+      }
+
+      if (seatIdsToCheckout.length === 0) {
+        throw new Error('Không tìm thấy danh sách ghế cần thanh toán. Vui lòng thực hiện lại.');
+      }
 
       const returnUrl = `${window.location.origin}/events/${event.id}?status=success`;
       const cancelUrl = `${window.location.origin}/events/${event.id}?status=cancelled`;
+
 
       // Gọi API PayOS (startCheckout)
       const checkoutRes = await startCheckout(seatIdsToCheckout, returnUrl, cancelUrl, token);
@@ -766,73 +990,82 @@ export default function EventDetailPage({
                   Danh sách khu vực & Hạng vé
                 </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {event.zones?.map(zone => {
-                    console.log(zone)
-                    const qty = zoneQuantities[zone.id] || 0;
-                    return (
-                      <div
-                        key={zone.id}
-                        style={{
-                          padding: '20px',
-                          borderRadius: 'var(--radius-md)',
-                          backgroundColor: 'var(--bg-secondary)',
-                          border: qty > 0 ? '1px solid var(--accent-pink)' : '1px solid var(--border-color)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          flexWrap: 'wrap',
-                          gap: '16px',
-                          transition: 'var(--transition)'
-                        }}
-                      >
-                        <div style={{ flex: 1, minWidth: '240px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color }} />
-                            <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>{zone.name}</h4>
+                  {
+                    Object.keys(backendZones).map(zoneName => {
+                      const zone = backendZones[zoneName];
+                      const qty = zoneQuantities[zoneName] || 0;
+                      const remainingCount = zoneRemaining[zoneName] ?? zone.remaining;
+                      const isSoldOut = remainingCount === 0;
+
+                      return (
+                        <div
+                          key={zoneName}
+                          style={{
+                            padding: '20px',
+                            borderRadius: 'var(--radius-md)',
+                            backgroundColor: 'var(--bg-secondary)',
+                            border: qty > 0 ? '1px solid var(--accent-pink)' : '1px solid var(--border-color)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '16px',
+                            transition: 'var(--transition)'
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: '240px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                              <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color }} />
+                              <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>{zone.name}</h4>
+                            </div>
+                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                              Khu vực vé đứng tự do - Sức chứa: {zone.total} vé
+                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px' }}>
+                              <span style={{ color: isSoldOut ? '#f87171' : 'var(--accent-emerald)', fontWeight: 600 }}>
+                                {`Còn lại: ${remainingCount} vé`}
+                              </span>
+                              <span style={{ color: 'var(--text-dim)' }}>•</span>
+                              <span style={{ color: 'var(--text-dim)' }}>Tự động phân bổ ghế</span>
+                            </div>
                           </div>
-                          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                            {zone.description}
-                          </p>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px' }}>
-                            <span style={{ color: (zoneRemaining[zone.id] || 0) === 0 ? '#f87171' : 'var(--accent-emerald)', fontWeight: 600 }}>
-                              {`Còn lại: ${zoneRemaining[zone.id] ?? zone.remaining} vé`}
-                            </span>
-                            <span style={{ color: 'var(--text-dim)' }}>•</span>
-                            <span style={{ color: 'var(--text-dim)' }}>Khu vực đứng tự do</span>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: '17px', fontWeight: 800, color: 'var(--accent-pink)' }}>{formatVND(zone.price)}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>/ 1 vé</div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'rgba(0,0,0,0.4)', padding: '6px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                              <button
+                                onClick={() => handleUpdateZoneQty(zoneName, -1)}
+                                disabled={qty <= 0}
+                                style={{ width: '30px', height: '30px', borderRadius: '6px', backgroundColor: qty > 0 ? 'var(--bg-tertiary)' : 'transparent', color: qty > 0 ? '#fff' : 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty > 0 ? 'pointer' : 'not-allowed' }}
+                              >
+                                <Minus size={15} />
+                              </button>
+
+                              <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 800, fontSize: '16px', color: '#fff' }}>{qty}</span>
+
+                              <button
+                                onClick={() => handleUpdateZoneQty(zoneName, 1)}
+                                disabled={totalZoneCount >= 5 || qty >= remainingCount || isSoldOut}
+                                style={{
+                                  width: '30px', height: '30px', borderRadius: '6px',
+                                  backgroundColor: (totalZoneCount < 5 && qty < remainingCount && !isSoldOut) ? 'var(--accent-pink)' : 'transparent',
+                                  color: (totalZoneCount < 5 && qty < remainingCount && !isSoldOut) ? '#fff' : 'var(--text-dim)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  cursor: (totalZoneCount < 5 && qty < remainingCount && !isSoldOut) ? 'pointer' : 'not-allowed'
+                                }}
+                              >
+                                <Plus size={15} />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '17px', fontWeight: 800, color: 'var(--accent-pink)' }}>{formatVND(zone.price)}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>/ 1 vé</div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'rgba(0,0,0,0.4)', padding: '6px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                            <button onClick={() => handleUpdateZoneQty(zone.id, -1)} disabled={qty <= 0}
-                              style={{ width: '30px', height: '30px', borderRadius: '6px', backgroundColor: qty > 0 ? 'var(--bg-tertiary)' : 'transparent', color: qty > 0 ? '#fff' : 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <Minus size={15} />
-                            </button>
-                            <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 800, fontSize: '16px', color: '#fff' }}>{qty}</span>
-                            <button
-                              onClick={() => handleUpdateZoneQty(zone.id, 1)}
-                              disabled={totalZoneCount >= 5 || qty >= (zoneRemaining[zone.id] ?? zone.remaining) || (zoneRemaining[zone.id] ?? zone.remaining) <= 0}
-                              style={{
-                                width: '30px',
-                                height: '30px',
-                                borderRadius: '6px',
-                                backgroundColor: (totalZoneCount < 5 && qty < (zoneRemaining[zone.id] ?? zone.remaining)) ? 'var(--accent-pink)' : 'transparent',
-                                color: (totalZoneCount < 5 && qty < (zoneRemaining[zone.id] ?? zone.remaining)) ? '#fff' : 'var(--text-dim)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}
-                            >
-                              <Plus size={15} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  }
                 </div>
                 <div style={{ marginTop: '16px', fontSize: '13px', color: 'var(--text-dim)', textAlign: 'right' }}>
                   Tổng số vé đang chọn: <strong style={{ color: 'var(--accent-pink)' }}>{totalZoneCount}</strong> / 5 vé tối đa
@@ -863,14 +1096,14 @@ export default function EventDetailPage({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
                     {selectedSeats.map(seat => {
                       return (
-                      <div key={seat.code} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'var(--bg-secondary)', fontSize: '13px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontWeight: 800, color: 'var(--accent-pink)' }}>{seat.code}</span>
-                          <span style={{ color: 'var(--text-muted)' }}>({seat.tier})</span>
+                        <div key={seat.code} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'var(--bg-secondary)', fontSize: '13px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 800, color: 'var(--accent-pink)' }}>{seat.code}</span>
+                            <span style={{ color: 'var(--text-muted)' }}>({seat.tier})</span>
+                          </div>
+                          <span style={{ fontWeight: 700 }}>{formatVND(seat.price)}</span>
                         </div>
-                        <span style={{ fontWeight: 700 }}>{formatVND(seat.price)}</span>
-                      </div>
-                    )
+                      )
                     })}
                   </div>
                 )}
@@ -915,7 +1148,7 @@ export default function EventDetailPage({
                 <span>Bạn cần đăng nhập để hoàn tất giữ chỗ và nhận vé qua email.</span>
               </div>
             )}
-            <button
+            {/* <button
               onClick={isReserved ? handlePayment : handleReserveSeats}
               disabled={!hasSelections || isProcessingPayment || isUpcoming}
               className="glow-btn-pink"
@@ -954,7 +1187,79 @@ export default function EventDetailPage({
                   {user ? 'Giữ chỗ ngay' : 'Đăng nhập & Giữ chỗ'}
                 </div>
               )}
-            </button>
+            </button> */}
+            <div>
+              {/* Nút chính (Giữ chỗ hoặc Thanh toán) */}
+              <button
+                onClick={isReserved ? handlePayment : handleReserveSeats}
+                disabled={!hasSelections || isProcessingPayment || isUpcoming}
+                className="glow-btn-pink"
+                style={{
+                  width: '100%', padding: '14px', fontSize: '15px', fontWeight: 700,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                  opacity: (!hasSelections || isProcessingPayment || isUpcoming) ? 0.6 : 1,
+                  cursor: (!hasSelections || isProcessingPayment || isUpcoming) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isProcessingPayment ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', width: '18px', height: '18px' }} />
+                    Đang kết nối PayOS...
+                  </div>
+                ) : isUpcoming ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertTriangle size={18} />
+                    Sự kiện chưa mở bán
+                  </div>
+                ) : isReserved ? (
+                  // TRẠNG THÁI 2: ĐÃ GIỮ GHẾ -> HIỂN THỊ NÚT THANH TOÁN VÀ ĐỒNG HỒ ĐẾM NGƯỢC
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CreditCard size={18} />
+                      {user ? `Thanh toán qua PayOS • ${formatVND(totalPrice)}` : 'Đăng nhập & Thanh toán'}
+                    </div>
+                    <span style={{ fontSize: '12px', color: '#ffeb3b', fontWeight: 500 }}>
+                      ⏱️ Giữ ghế thành công! Hết hạn sau: {formatCountdown(countdownSeconds)}
+                    </span>
+                  </div>
+                ) : (
+                  // TRẠNG THÁI 1: CHƯA GIỮ GHẾ -> HIỂN THỊ NÚT GIỮ GHẾ
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CreditCard size={18} />
+                    {user ? 'Giữ chỗ ngay' : 'Đăng nhập & Giữ chỗ'}
+                  </div>
+                )}
+              </button>
+
+              {/* NÚT HỦY GIỮ GHẾ (Chỉ hiện khi isReserved = true) */}
+              {isReserved && (
+                <button
+                  onClick={handleCancelReservation}
+                  disabled={isProcessingPayment}
+                  style={{
+                    width: '100%',
+                    marginTop: '10px',
+                    padding: '10px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    backgroundColor: 'transparent',
+                    color: '#f87171', // Màu đỏ cảnh báo
+                    border: '1px solid #f87171',
+                    borderRadius: 'var(--radius-md)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(248, 113, 113, 0.1)'}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  ❌ Hủy giữ ghế / Chọn lại
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
