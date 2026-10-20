@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchAdminTickets } from '../services/eventService';
+import { fetchAdminTickets, fetchSeatsByEvent } from '../services/eventService';
 import {
   Plus,
   Search,
@@ -104,6 +104,12 @@ const INITIAL_MOCK_TICKETS = [
     status: 'paid'
   }
 ];
+
+const getRowLetter = (idx) => {
+  if (idx < 0) return '';
+  if (idx < 26) return String.fromCharCode(65 + idx);
+  return String.fromCharCode(64 + Math.floor(idx / 26)) + String.fromCharCode(65 + (idx % 26));
+};
 
 export default function AdminPage({
   events,
@@ -252,12 +258,52 @@ export default function AdminPage({
     const evMaxPrice = getMaxPrice(ev);
     const evVenue = getEventVenue(ev);
     const evDate = formatEventDate(ev) || ev.date || '';
-    const rowsCount = ev.rowsCount || ev.seatConfig?.rowsCount || (singleTier.rows?.length) || 7;
-    const seatsPerRow = ev.seatsPerRow || ev.seatConfig?.seatsPerRow || 12;
-    const totalSeats = ev.totalSeats || ev.seatConfig?.totalSeats || (rowsCount * seatsPerRow);
+
+    let rowsCount = ev.rowsCount || ev.seatConfig?.rowsCount;
+    let seatsPerRow = ev.seatsPerRow || ev.seatConfig?.seatsPerRow;
+
+    // 1. Kiểm tra trong localStorage
+    if ((!rowsCount || !seatsPerRow) && typeof window !== 'undefined' && window.localStorage && ev.id) {
+      try {
+        const stored = localStorage.getItem(`EVENT_LAYOUT_${ev.id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (!rowsCount && parsed.rowsCount) rowsCount = Number(parsed.rowsCount);
+          if (!seatsPerRow && parsed.seatsPerRow) seatsPerRow = Number(parsed.seatsPerRow);
+        }
+      } catch (e) {}
+    }
+
+    // 2. Kiểm tra trong highlights
+    if ((!rowsCount || !seatsPerRow) && Array.isArray(ev.highlights)) {
+      for (const h of ev.highlights) {
+        if (typeof h === 'string') {
+          const m = h.match(/LAYOUT:ROWS=(\d+);COLS=(\d+)/);
+          if (m) {
+            if (!rowsCount) rowsCount = parseInt(m[1], 10);
+            if (!seatsPerRow) seatsPerRow = parseInt(m[2], 10);
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Phân tích tiêu đề (VD: "Test 5 x 7" -> 5 hàng, 7 ghế)
+    if ((!rowsCount || !seatsPerRow) && ev.title) {
+      const tm = ev.title.match(/(\d+)\s*[xX*]\s*(\d+)/);
+      if (tm) {
+        if (!rowsCount) rowsCount = parseInt(tm[1], 10);
+        if (!seatsPerRow) seatsPerRow = parseInt(tm[2], 10);
+      }
+    }
+
+    const finalRowsCount = rowsCount || (singleTier.rows?.length) || 7;
+    const finalSeatsPerRow = seatsPerRow || 12;
+    const totalSeats = ev.totalSeats || ev.seatConfig?.totalSeats || (finalRowsCount * finalSeatsPerRow);
 
     const price = evMinPrice > 0 ? evMinPrice : (singleTier.price > 0 ? singleTier.price : (Number(ev.seatPrice) > 0 ? Number(ev.seatPrice) : 500000));
     const maxP = evMaxPrice > 0 ? evMaxPrice : price;
+
     setFormData({
       ...ev,
       event_type: isSeated ? 'SEAT_BASED' : 'ZONE_BASED',
@@ -288,6 +334,59 @@ export default function AdminPage({
       zones: ev.zones || initialForm.zones
     });
     setIsModalOpen(true);
+
+    if (ev.id) {
+      fetchSeatsByEvent(ev.id).then(seats => {
+        if (!seats || seats.length === 0) return;
+        if (!isSeated) {
+          const zoneMap = {};
+          seats.forEach(s => {
+            const zName = (s.zone_name || 'STANDARD').toUpperCase();
+            if (!zoneMap[zName]) {
+              zoneMap[zName] = {
+                id: `z-${zName.toLowerCase()}`,
+                name: zName,
+                price: Number(s.price || 0),
+                description: 'Vé đứng tự do',
+                total: 0,
+                remaining: 0,
+                color: '#10b981'
+              };
+            }
+            zoneMap[zName].total += 1;
+            if (s.status === 'AVAILABLE') {
+              zoneMap[zName].remaining += 1;
+            }
+          });
+          const loadedZones = Object.values(zoneMap);
+          if (loadedZones.length > 0) {
+            const zPrices = loadedZones.map(z => z.price).filter(p => p > 0);
+            const loadedMinP = zPrices.length > 0 ? Math.min(...zPrices) : price;
+            const loadedMaxP = zPrices.length > 0 ? Math.max(...zPrices) : maxP;
+            setFormData(prev => ({
+              ...prev,
+              zones: loadedZones,
+              minPrice: loadedMinP,
+              maxPrice: loadedMaxP,
+              min_price: `${loadedMinP.toFixed(2)}`,
+              max_price: `${loadedMaxP.toFixed(2)}`
+            }));
+          }
+        } else {
+          if (Number(seats[0]?.price) > 0) {
+            const actualSeatPrice = Number(seats[0].price);
+            setFormData(prev => ({
+              ...prev,
+              seatPrice: actualSeatPrice,
+              minPrice: actualSeatPrice,
+              maxPrice: actualSeatPrice,
+              min_price: `${actualSeatPrice.toFixed(2)}`,
+              max_price: `${actualSeatPrice.toFixed(2)}`
+            }));
+          }
+        }
+      }).catch(err => console.warn('Could not sync seat/zone details for edit modal:', err));
+    }
   };
 
   // Helper quản lý danh sách Zone cho Zone-based
@@ -296,7 +395,8 @@ export default function AdminPage({
       const newZones = [...(prev.zones || [])];
       newZones[index] = { ...newZones[index], [field]: value };
       if (field === 'total') {
-        newZones[index].remaining = Number(value);
+        const numVal = (value === '' || value == null) ? 0 : Number(value);
+        newZones[index].remaining = isNaN(numVal) ? 0 : numVal;
       }
       return { ...prev, zones: newZones };
     });
@@ -339,14 +439,25 @@ export default function AdminPage({
     let payload;
 
     if (isSeated) {
+      const rowsCount = (formData.rowsCount === '' || formData.rowsCount == null) ? 0 : Number(formData.rowsCount);
+      const seatsPerRow = (formData.seatsPerRow === '' || formData.seatsPerRow == null) ? 0 : Number(formData.seatsPerRow);
+
+      if (rowsCount < 2) {
+        alert(`Số hàng ghế không hợp lệ! Vui lòng nhập tối thiểu 2 hàng ghế (hiện tại: ${rowsCount}).`);
+        return;
+      }
+
+      if (seatsPerRow < 3) {
+        alert(`Số ghế mỗi hàng không hợp lệ! Vui lòng nhập tối thiểu 3 ghế cho mỗi hàng (hiện tại: ${seatsPerRow}).`);
+        return;
+      }
+
       // Seated-based: Cấu hình số ghế theo hàng x cột
       const price = Number(formData.seatPrice !== '' && formData.seatPrice != null ? formData.seatPrice : (formData.minPrice || 500000));
       const tierName = formData.seatTierName || 'Ghế tiêu chuẩn';
       const tierColor = formData.seatColor || '#6366f1';
-      const seatsPerRow = Number(formData.seatsPerRow) || 12;
-      const rowsCount = Number(formData.rowsCount) || (formData.totalSeats ? Math.ceil(Number(formData.totalSeats) / seatsPerRow) : 7);
       const totalSeats = Number(formData.totalSeats) || (rowsCount * seatsPerRow);
-      const rowLetters = Array.from({ length: rowsCount }, (_, i) => String.fromCharCode(65 + i));
+      const rowLetters = Array.from({ length: rowsCount }, (_, i) => getRowLetter(i));
 
       const singleTier = {
         id: 'standard',
@@ -361,7 +472,6 @@ export default function AdminPage({
         rowsCount,
         seatsPerRow,
         price
-
       };
 
       payload = {
@@ -374,16 +484,20 @@ export default function AdminPage({
         max_price: `${price.toFixed(2)}`,
         minPrice: price,
         maxPrice: price,
+        seatPrice: price,
         totalSeats,
         rowsCount,
         seatsPerRow,
         seatConfig,
         seatTiers: [singleTier],
         thumbnails: formData.thumbnails || [formData.image],
-        highlights: formData.highlights || [
-          'Sơ đồ ghế đồng giá cho toàn bộ vị trí',
-          'Trải nghiệm âm thanh và ánh sáng chuẩn quốc tế',
-          'Check-in bằng mã vé điện tử QR nhanh chóng'
+        highlights: [
+          `LAYOUT:ROWS=${rowsCount};COLS=${seatsPerRow}`,
+          ...(formData.highlights || [
+            'Sơ đồ ghế đồng giá cho toàn bộ vị trí',
+            'Trải nghiệm âm thanh và ánh sáng chuẩn quốc tế',
+            'Check-in bằng mã vé điện tử QR nhanh chóng'
+          ]).filter(h => typeof h !== 'string' || !h.startsWith('LAYOUT:'))
         ],
         rules: formData.rules || [
           'Không mang thức ăn, nước uống từ bên ngoài.',
@@ -391,9 +505,24 @@ export default function AdminPage({
         ]
       };
     } else {
-      const zoneConfigs = (formData.zones || []).map(z => ({
+      const zones = formData.zones || [];
+      if (zones.length === 0) {
+        alert('Vui lòng thêm ít nhất một khu vực cho sự kiện dạng Zone-based!');
+        return;
+      }
+
+      for (let i = 0; i < zones.length; i++) {
+        const z = zones[i];
+        const count = (z.total === '' || z.total == null) ? 0 : Number(z.total);
+        if (count < 50) {
+          alert(`Khu vực "${z.name || `Khu vực ${i + 1}`}" có số lượng vé không hợp lệ! Mỗi khu vực phải có tối thiểu 50 vé (hiện tại: ${count}).`);
+          return;
+        }
+      }
+
+      const zoneConfigs = zones.map(z => ({
         zoneName: (z.name || z.zoneName || 'STANDARD').toUpperCase(),
-        count: Number(z.total || z.remaining || 50),
+        count: (z.total === '' || z.total == null) ? 0 : Number(z.total),
         price: Number(z.price || formData.minPrice || 500000)
       }));
       const totalTickets = zoneConfigs.reduce((sum, z) => sum + z.count, 0);
@@ -412,11 +541,14 @@ export default function AdminPage({
         maxPrice: maxP,
         totalTickets,
         zoneConfigs,
-        zones: (formData.zones || []).map(z => ({
-          ...z,
-          total: Number(z.total || z.remaining || 50),
-          remaining: Number(z.remaining || z.total || 50)
-        })),
+        zones: zones.map(z => {
+          const c = (z.total === '' || z.total == null) ? 0 : Number(z.total);
+          return {
+            ...z,
+            total: c,
+            remaining: c
+          };
+        }),
         thumbnails: formData.thumbnails || [formData.image],
         highlights: formData.highlights || [
           'Khu vực đứng tự do bùng nổ năng lượng',
@@ -430,12 +562,24 @@ export default function AdminPage({
     }
 
     if (editingEvent) {
+      if (typeof window !== 'undefined' && window.localStorage && isSeated) {
+        localStorage.setItem(`EVENT_LAYOUT_${editingEvent.id}`, JSON.stringify({
+          rowsCount: payload.rowsCount,
+          seatsPerRow: payload.seatsPerRow
+        }));
+      }
       onUpdateEvent({
         ...payload,
         id: editingEvent.id
       });
     } else {
       const newId = `22222222-2222-2222-2222-${Date.now().toString().slice(-12)}`;
+      if (typeof window !== 'undefined' && window.localStorage && isSeated) {
+        localStorage.setItem(`EVENT_LAYOUT_${newId}`, JSON.stringify({
+          rowsCount: payload.rowsCount,
+          seatsPerRow: payload.seatsPerRow
+        }));
+      }
       onAddEvent({
         ...payload,
         id: newId,
@@ -516,7 +660,6 @@ export default function AdminPage({
                 Ticket<span style={{ color: '#ec4899' }}>Verse</span>
               </span>
               <span style={{ fontSize: '9px', color: '#f472b6', fontWeight: 700, backgroundColor: 'rgba(236, 72, 153, 0.2)', padding: '2px 5px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-
                 ADMIN
               </span>
             </div>
@@ -524,7 +667,6 @@ export default function AdminPage({
         </div>
 
         {/* Quick Tab pills on mobile topbar */}
-
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
           <button
             onClick={() => { setActiveTab('events'); setIsMobileSidebarOpen(false); }}
@@ -538,7 +680,6 @@ export default function AdminPage({
               cursor: 'pointer',
               border: 'none',
               whiteSpace: 'nowrap'
-
             }}
           >
             Sự kiện
@@ -546,7 +687,6 @@ export default function AdminPage({
           <button
             onClick={() => { setActiveTab('tickets'); setIsMobileSidebarOpen(false); }}
             style={{
-
               padding: '5px 10px',
               borderRadius: 'var(--radius-sm)',
               fontSize: '11px',
@@ -556,7 +696,6 @@ export default function AdminPage({
               cursor: 'pointer',
               border: 'none',
               whiteSpace: 'nowrap'
-
             }}
           >
             Vé ({ticketsList.length})
@@ -591,7 +730,7 @@ export default function AdminPage({
           />
         )}
 
-        {/* ================= ASIDE BÊN TRÁI ================= */}
+        {/* ================= ASIDE BÊN TRÁI (CỐ ĐỊNH) ================= */}
         <aside 
           className={`admin-sidebar ${isMobileSidebarOpen ? 'admin-sidebar-open' : ''}`}
           style={{
@@ -601,8 +740,11 @@ export default function AdminPage({
             borderRight: '1px solid var(--border-color)',
             display: 'flex',
             flexDirection: 'column',
-            position: 'sticky',
+            position: 'fixed',
             top: 0,
+            left: 0,
+            bottom: 0,
+            height: '100vh',
             height: '100dvh',
             zIndex: 95
           }}
@@ -615,7 +757,8 @@ export default function AdminPage({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '12px'
+              gap: '12px',
+              flexShrink: 0
             }}
           >
             <div
@@ -676,7 +819,7 @@ export default function AdminPage({
           </div>
 
           {/* Danh sách các mục điều hướng Sidebar */}
-          <div style={{ padding: '20px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ padding: '20px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
             <div style={{
               fontSize: '11px',
               fontWeight: 700,
@@ -765,7 +908,8 @@ export default function AdminPage({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '12px'
+          gap: '12px',
+          flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
             <img
@@ -801,17 +945,19 @@ export default function AdminPage({
       </aside>
 
       {/* ================= NỘI DUNG CHÍNH (MAIN CONTENT) ================= */}
-      <main style={{
-        flex: 1,
-        minWidth: 0,
-        width: '100%',
-        maxWidth: '100%',
-        overflowX: 'hidden',
-        padding: 'clamp(14px, 3vw, 28px) clamp(10px, 2.5vw, 24px)',
-        backgroundColor: 'var(--bg-primary)',
-        boxSizing: 'border-box'
-
-      }}>
+      <main
+        className="admin-main-content"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          width: '100%',
+          maxWidth: '100%',
+          overflowX: 'hidden',
+          padding: 'clamp(14px, 3vw, 28px) clamp(10px, 2.5vw, 24px)',
+          backgroundColor: 'var(--bg-primary)',
+          boxSizing: 'border-box'
+        }}
+      >
         {/* ================= TAB 1: QUẢN LÝ SỰ KIỆN ================= */}
         {activeTab === 'events' && (
           <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
@@ -904,6 +1050,7 @@ export default function AdminPage({
                   }}
                 />
               </div>
+
               {/* Loại vé Filter & Toggle Chế độ xem */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1417,13 +1564,11 @@ export default function AdminPage({
                     color: '#f472b6',
                     border: '1px solid rgba(236, 72, 153, 0.3)',
                     cursor: 'pointer',
-
                     fontSize: '12px',
                     fontWeight: 600
                   }}
                 >
                   <RefreshCw size={13} className={isLoadingTickets ? 'spin' : ''} />
-
                   {isLoadingTickets ? 'Đang đồng bộ...' : 'Làm mới'}
                 </button>
               </div>
@@ -1790,7 +1935,6 @@ export default function AdminPage({
                           <tr>
                             <td colSpan="7" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
                               Đang tải dữ liệu vé từ hệ thống database Supabase...
-
                             </td>
                           </tr>
                         ) : filteredTickets.length === 0 ? (
@@ -2121,6 +2265,7 @@ export default function AdminPage({
                   />
                 </div>
               </div>
+
               {/* Cấu hình giá & Số ghế / Vé: Phân tách Seated-based vs Zone-based */}
               {(formData.event_type === 'SEAT_BASED' || formData.type === 'seated') ? (
                 <div style={{
@@ -2154,7 +2299,6 @@ export default function AdminPage({
 
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
                     💡 Nhập số hàng và số ghế mỗi hàng để tạo sơ đồ ghế ngồi tự động. Chuẩn thiết kế là 12 ghế/hàng để hiển thị đồng nhất không bị cuộn ngang.
-
                   </p>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '16px' }}>
@@ -2201,7 +2345,6 @@ export default function AdminPage({
                             maxPrice: numVal,
                             min_price: `${numVal.toFixed(2)}`,
                             max_price: `${numVal.toFixed(2)}`
-
                           });
                         }}
                         style={{
@@ -2220,22 +2363,28 @@ export default function AdminPage({
                   {/* Nhập số ghế / hàng và tổng số ghế */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '14px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                        Số hàng ghế (A - Z) *
+                      <label style={{
+                        display: 'block',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: ((formData.rowsCount === '' || formData.rowsCount == null) ? 0 : Number(formData.rowsCount)) < 2 ? '#ef4444' : 'var(--text-muted)',
+                        marginBottom: '6px'
+                      }}>
+                        Số hàng ghế (tối thiểu 2) *
                       </label>
                       <input
                         type="number"
-                        min="1"
-                        max="26"
-                        required
-                        value={formData.rowsCount || 7}
+                        placeholder="VD: 7"
+                        value={formData.rowsCount !== undefined && formData.rowsCount !== null ? formData.rowsCount : ''}
                         onChange={(e) => {
-                          const r = Math.max(1, Number(e.target.value));
-                          const s = Number(formData.seatsPerRow) || 12;
+                          const val = e.target.value;
+                          const r = (val === '' || val == null) ? 0 : Number(val);
+                          const s = (formData.seatsPerRow === '' || formData.seatsPerRow == null) ? 0 : Number(formData.seatsPerRow);
+                          const calcTotal = (isNaN(r) ? 0 : r) * (isNaN(s) ? 0 : s);
                           setFormData({
                             ...formData,
-                            rowsCount: r,
-                            totalSeats: r * s
+                            rowsCount: val,
+                            totalSeats: calcTotal
                           });
                         }}
                         style={{
@@ -2243,33 +2392,46 @@ export default function AdminPage({
                           padding: '10px 14px',
                           borderRadius: 'var(--radius-md)',
                           backgroundColor: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-color)',
+                          border: `1px solid ${((formData.rowsCount === '' || formData.rowsCount == null) ? 0 : Number(formData.rowsCount)) < 2 ? '#ef4444' : 'var(--border-color)'}`,
                           color: '#fff',
-                          fontSize: '14px'
+                          fontSize: '14px',
+                          outline: 'none'
                         }}
                       />
-                      <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
-                        Hàng A đến {String.fromCharCode(64 + Math.min(26, Number(formData.rowsCount) || 7))}
-                      </span>
+                      {((formData.rowsCount === '' || formData.rowsCount == null) ? 0 : Number(formData.rowsCount)) < 2 ? (
+                        <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block', fontWeight: 600 }}>
+                          ⚠️ Tối thiểu phải có 2 hàng ghế (hiện tại: {(formData.rowsCount === '' || formData.rowsCount == null) ? 0 : formData.rowsCount})
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                          Hàng A đến {getRowLetter(Number(formData.rowsCount) - 1)} ({formData.rowsCount} hàng)
+                        </span>
+                      )}
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                        Số ghế mỗi hàng *
+                      <label style={{
+                        display: 'block',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: ((formData.seatsPerRow === '' || formData.seatsPerRow == null) ? 0 : Number(formData.seatsPerRow)) < 3 ? '#ef4444' : 'var(--text-muted)',
+                        marginBottom: '6px'
+                      }}>
+                        Số ghế mỗi hàng (tối thiểu 3) *
                       </label>
                       <input
                         type="number"
-                        min="1"
-                        max="30"
-                        required
-                        value={formData.seatsPerRow || 12}
+                        placeholder="VD: 12"
+                        value={formData.seatsPerRow !== undefined && formData.seatsPerRow !== null ? formData.seatsPerRow : ''}
                         onChange={(e) => {
-                          const s = Math.max(1, Number(e.target.value));
-                          const r = Number(formData.rowsCount) || 7;
+                          const val = e.target.value;
+                          const s = (val === '' || val == null) ? 0 : Number(val);
+                          const r = (formData.rowsCount === '' || formData.rowsCount == null) ? 0 : Number(formData.rowsCount);
+                          const calcTotal = (isNaN(r) ? 0 : r) * (isNaN(s) ? 0 : s);
                           setFormData({
                             ...formData,
-                            seatsPerRow: s,
-                            totalSeats: r * s
+                            seatsPerRow: val,
+                            totalSeats: calcTotal
                           });
                         }}
                         style={{
@@ -2277,14 +2439,21 @@ export default function AdminPage({
                           padding: '10px 14px',
                           borderRadius: 'var(--radius-md)',
                           backgroundColor: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-color)',
+                          border: `1px solid ${((formData.seatsPerRow === '' || formData.seatsPerRow == null) ? 0 : Number(formData.seatsPerRow)) < 3 ? '#ef4444' : 'var(--border-color)'}`,
                           color: '#fff',
-                          fontSize: '14px'
+                          fontSize: '14px',
+                          outline: 'none'
                         }}
                       />
-                      <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
-                        Ghế số 1 đến {formData.seatsPerRow || 12}
-                      </span>
+                      {((formData.seatsPerRow === '' || formData.seatsPerRow == null) ? 0 : Number(formData.seatsPerRow)) < 3 ? (
+                        <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block', fontWeight: 600 }}>
+                          ⚠️ 1 hàng phải có tối thiểu 3 ghế (hiện tại: {(formData.seatsPerRow === '' || formData.seatsPerRow == null) ? 0 : formData.seatsPerRow})
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                          Ghế số 1 đến {formData.seatsPerRow}
+                        </span>
+                      )}
                     </div>
 
                     <div>
@@ -2293,16 +2462,13 @@ export default function AdminPage({
                       </label>
                       <input
                         type="number"
-                        min="1"
-                        required
-                        value={formData.totalSeats || ((formData.rowsCount || 7) * (formData.seatsPerRow || 12))}
+                        placeholder="VD: 84"
+                        value={formData.totalSeats !== undefined && formData.totalSeats !== null ? formData.totalSeats : 0}
                         onChange={(e) => {
-                          const tot = Math.max(1, Number(e.target.value));
-                          const s = Number(formData.seatsPerRow) || 12;
+                          const val = e.target.value;
                           setFormData({
                             ...formData,
-                            totalSeats: tot,
-                            rowsCount: Math.ceil(tot / s)
+                            totalSeats: val === '' ? 0 : Number(val)
                           });
                         }}
                         style={{
@@ -2313,15 +2479,15 @@ export default function AdminPage({
                           border: '1px solid var(--accent-pink)',
                           color: '#fff',
                           fontSize: '14px',
-                          fontWeight: 700
+                          fontWeight: 700,
+                          outline: 'none'
                         }}
                       />
                       <span style={{ fontSize: '11px', color: 'var(--accent-pink)', marginTop: '4px', display: 'block' }}>
-                        Tự động chia đều theo các hàng
+                        Tự động tính: (Số hàng × Số ghế)
                       </span>
                     </div>
                   </div>
-
 
                   <div style={{
                     display: 'flex',
@@ -2334,8 +2500,9 @@ export default function AdminPage({
                     fontSize: '12px'
                   }}>
                     <span style={{ color: 'var(--text-dim)' }}>
-                      Quy mô dự kiến: <strong style={{ color: '#fff' }}>{formData.totalSeats || ((formData.rowsCount || 7) * (formData.seatsPerRow || 12))} ghế ngồi</strong> ({formData.rowsCount || 7} hàng A-{String.fromCharCode(64 + Math.min(26, Number(formData.rowsCount) || 7))}, {formData.seatsPerRow || 12} ghế/hàng)
-
+                      Quy mô dự kiến: <strong style={{ color: '#fff' }}>{formData.totalSeats !== undefined && formData.totalSeats !== null ? formData.totalSeats : 0} ghế ngồi</strong> (
+                      {Number(formData.rowsCount) > 0 ? `${formData.rowsCount} hàng A-${getRowLetter(Number(formData.rowsCount) - 1)}` : '0 hàng'},{' '}
+                      {Number(formData.seatsPerRow) > 0 ? `${formData.seatsPerRow} ghế/hàng` : '0 ghế/hàng'})
                     </span>
                     <span style={{ color: 'var(--accent-pink)', fontWeight: 700 }}>
                       Giá bán: {formatVND(formData.seatPrice || formData.minPrice || 500000)} / vé
@@ -2420,24 +2587,41 @@ export default function AdminPage({
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-dim)', marginBottom: '3px' }}>Số lượng vé (Sức chứa) *</label>
+                          <label style={{
+                            display: 'block',
+                            fontSize: '11px',
+                            color: ((z.total === '' || z.total == null) ? 0 : Number(z.total)) < 50 ? '#ef4444' : 'var(--text-dim)',
+                            marginBottom: '3px',
+                            fontWeight: 600
+                          }}>
+                            Số lượng vé (tối thiểu 50) *
+                          </label>
                           <input
                             type="number"
-                            min="1"
-                            required
-                            value={z.total || z.remaining || 50}
-                            onChange={(e) => handleZoneChange(idx, 'total', Number(e.target.value))}
+                            placeholder="VD: 50"
+                            value={z.total !== undefined && z.total !== null ? z.total : ''}
+                            onChange={(e) => handleZoneChange(idx, 'total', e.target.value)}
                             style={{
                               width: '100%',
                               padding: '8px 10px',
                               borderRadius: '4px',
                               backgroundColor: 'var(--bg-secondary)',
-                              border: '1px solid var(--accent-pink)',
+                              border: `1px solid ${((z.total === '' || z.total == null) ? 0 : Number(z.total)) < 50 ? '#ef4444' : 'var(--accent-pink)'}`,
                               color: '#fff',
                               fontSize: '13px',
-                              fontWeight: 700
+                              fontWeight: 700,
+                              outline: 'none'
                             }}
                           />
+                          {((z.total === '' || z.total == null) ? 0 : Number(z.total)) < 50 ? (
+                            <span style={{ fontSize: '10px', color: '#ef4444', marginTop: '3px', display: 'block', fontWeight: 600 }}>
+                              ⚠️ Tối thiểu 50 vé (hiện tại: {(z.total === '' || z.total == null) ? 0 : z.total})
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: '3px', display: 'block' }}>
+                              Sức chứa: {z.total} vé
+                            </span>
+                          )}
                         </div>
 
                         <div>
@@ -2494,13 +2678,12 @@ export default function AdminPage({
                   }}>
                     <span style={{ color: 'var(--text-dim)' }}>
                       Tổng số vé phát hành: <strong style={{ color: 'var(--accent-emerald)' }}>
-                        {(formData.zones || []).reduce((sum, z) => sum + (Number(z.total || z.remaining) || 0), 0)} vé
+                        {(formData.zones || []).reduce((sum, z) => sum + ((z.total === '' || z.total == null) ? 0 : (Number(z.total) || 0)), 0)} vé
                       </strong>
                     </span>
                     <span style={{ color: 'var(--accent-pink)', fontWeight: 700 }}>
                       {(formData.zones || []).length} khu vực
                     </span>
-
                   </div>
                 </div>
               )}
@@ -2684,8 +2867,30 @@ export default function AdminPage({
           .admin-sidebar-close-btn {
             display: flex !important;
           }
+          .admin-main-content {
+            margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+          }
         }
         @media (min-width: 1024px) {
+          .admin-sidebar {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            bottom: 0 !important;
+            width: 280px !important;
+            min-width: 280px !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            z-index: 50 !important;
+            overflow-y: auto !important;
+          }
+          .admin-main-content {
+            margin-left: 280px !important;
+            width: calc(100% - 280px) !important;
+            max-width: calc(100% - 280px) !important;
+          }
           .admin-sidebar-close-btn {
             display: none !important;
           }

@@ -24,6 +24,8 @@ import {
   formatEventTime,
   isSeatedEvent,
   getEventVenue,
+  getMinPrice,
+  getMaxPrice,
   getSingleSeatTier,
   isUpcomingEvent
 } from '../data/events';
@@ -49,7 +51,7 @@ export default function EventDetailPage({
   onOpenCart
 }) {
   const isSeated = isSeatedEvent(event);
-  const singleSeatTier = getSingleSeatTier(event);
+  const baseSingleSeatTier = getSingleSeatTier(event);
   const eventVenue = getEventVenue(event);
   const eventDate = formatEventDate(event);
   const eventTime = formatEventTime(event) || event?.time || '';
@@ -67,15 +69,102 @@ export default function EventDetailPage({
   // State mở drawer chi tiết trên mobile bottom bar
   const [isMobileSummaryOpen, setIsMobileSummaryOpen] = useState(false);
 
-  // SEATED-BASED STATE
+  // SEATED-BASED & GENERAL BOOKING STATE
   const [occupiedSeats, setOccupiedSeats] = useState(
-    () => initialOccupiedSeats ? new Set(initialOccupiedSeats) : new Set(['A-3', 'A-4', 'B-5', 'C-1', 'C-2', 'D-7', 'E-4', 'F-5'])
+    () => initialOccupiedSeats ? new Set(initialOccupiedSeats) : new Set()
   );
   const [selectedSeats, setSelectedSeats] = useState([]);
   const [reservedZoneSeats, setReservedZoneSeats] = useState([]);
   const [backendZones, setBackendZones] = useState({});
   const [zoneRemaining, setZoneRemaining] = useState({});
   const [zoneQuantities, setZoneQuantities] = useState({});
+  const [backendSeats, setBackendSeats] = useState([]);
+
+  // Trạng thái quản lý việc đã giữ ghế thành công hay chưa
+  const [isReserved, setIsReserved] = useState(false);
+  // Danh sách ID ghế đã giữ thành công từ Backend (dùng cho cả SEAT_BASED và ZONE_BASED khi thanh toán)
+  const [reservedSeatIds, setReservedSeatIds] = useState([]);
+  // Thời điểm hết hạn giữ ghế (lấy từ trường reserved_until của server trả về)
+  const [reservedUntilTime, setReservedUntilTime] = useState(null);
+  // Số giây còn lại để đếm ngược hiển thị lên giao diện
+  const [countdownSeconds, setCountdownSeconds] = useState(0);
+  // Trạng thái xử lý thanh toán
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  // Hàm hỗ trợ gán màu sắc đẹp mắt cho từng zone dựa theo tên
+  const getZoneColor = (name) => {
+    const upper = (name || '').toUpperCase();
+    if (upper.includes('VIP')) return '#ec4899'; // Hồng
+    if (upper.includes('REGULAR') || upper.includes('STD')) return '#3b82f6'; // Xanh dương
+    return '#10b981'; // Xanh lá mặc định
+  };
+
+  // Hàm đồng bộ và tải lại danh sách ghế/khu vực từ Backend
+  const reloadBackendSeats = () => {
+    if (!event?.id) return;
+
+    fetchSeatsByEvent(event.id)
+      .then(seats => {
+        if (!seats || seats.length === 0) return;
+        const now = new Date();
+        // 1. Phân loại logic cho SEATED-BASED
+        if (event.is_seated || event.event_type === "SEAT_BASED") {
+          setBackendSeats(seats);
+          const occupied = seats
+            .filter(s => {
+              if (s.status === 'SOLD') return true;
+              if (s.status === 'RESERVED' || s.status === 'PAYMENT_PROCESSING') {
+                const isExpired = s.reserved_until ? new Date(s.reserved_until) < now : false;
+                if (isExpired) return false;
+                // Nếu là ghế do chính tài khoản này đang giữ thì không hiển thị là đã bị chiếm
+                const isMySeat = user?.id && String(s.reserved_by) === String(user.id);
+                if (isMySeat) return false;
+                return true;
+              }
+              return false;
+            })
+            .map(s => {
+              const num = s.seat_number;
+              return /^[A-G]\d+$/.test(num) ? `${num.charAt(0)}-${num.slice(1)}` : num;
+            });
+          setOccupiedSeats(new Set(occupied));
+        }
+        // 2. Phân loại logic cho ZONE-BASED
+        else {
+          const zoneMap = {};
+          const remainingMap = {};
+
+          seats.forEach(seat => {
+            const zoneName = seat.zone_name || 'STANDARD';
+            const price = Number(seat.price) || 0;
+            const isAvailable = seat.status === 'AVAILABLE' ||
+              ((seat.status === 'RESERVED' || seat.status === 'PAYMENT_PROCESSING') && seat.reserved_until && new Date(seat.reserved_until) < now);
+
+            if (!zoneMap[zoneName]) {
+              zoneMap[zoneName] = {
+                name: zoneName,
+                price: price,
+                total: 0,
+                remaining: 0,
+                color: getZoneColor(zoneName)
+              };
+            }
+
+            zoneMap[zoneName].total += 1;
+            if (isAvailable) {
+              zoneMap[zoneName].remaining += 1;
+            }
+          });
+
+          setBackendZones(zoneMap);
+          Object.keys(zoneMap).forEach(zName => {
+            remainingMap[zName] = zoneMap[zName].remaining;
+          });
+          setZoneRemaining(remainingMap);
+        }
+      })
+      .catch(err => console.warn('Seats/Zones fetch error:', err));
+  };
 
   // Đồng bộ lại khi prop thay đổi (ví dụ đổi sự kiện)
   useEffect(() => {
@@ -90,83 +179,106 @@ export default function EventDetailPage({
     }
   }, [initialZoneRemaining]);
 
-  const [backendSeats, setBackendSeats] = useState([]);
+  // Đồng bộ giá vé ghế chính xác từ Backend hoặc cấu hình sự kiện
+  const effectiveSeatPrice = (backendSeats && backendSeats.length > 0 && backendSeats[0].price != null && Number(backendSeats[0].price) > 0)
+    ? Number(backendSeats[0].price)
+    : (getMinPrice(event) || baseSingleSeatTier.price || 500000);
 
-  // Đồng bộ trực tiếp danh sách ghế từ Backend
-  useEffect(() => {
-    if (!event?.id) return;
-
-    fetchSeatsByEvent(event.id)
-      .then(seats => {
-        if (!seats || seats.length === 0) return;
-        // 1. Phân loại logic cho SEATED-BASED
-        if (event.is_seated || event.event_type === "SEAT_BASED") {
-          setBackendSeats(seats);
-          const sold = seats
-            .filter(s => s.status === 'SOLD' || s.status === 'RESERVED' || s.status === 'PAYMENT_PROCESSING')
-            .map(s => {
-              const num = s.seat_number;
-              return /^[A-G]\d+$/.test(num) ? `${num.charAt(0)}-${num.slice(1)}` : num;
-            });
-          if (sold.length > 0) {
-            setOccupiedSeats(prev => new Set([...prev, ...sold]));
-          }
-        }
-
-        // 2. Phân loại logic cho ZONE-BASED
-        else {
-          const zoneMap = {};
-          const remainingMap = {};
-
-          // Thuật toán gom nhóm theo zone_based
-          seats.forEach(seat => {
-            const zoneName = seat.zone_name || 'STANDARD'; // Lấy tên khu vực chuẩn từ BE
-            const price = Number(seat.price) || 0;
-            const isAvailable = seat.status === 'AVAILABLE';
-
-            if (!zoneMap[zoneName]) {
-              zoneMap[zoneName] = {
-                name: zoneName,
-                price: price,
-                total: 0,
-                remaining: 0,
-                color: getZoneColor(zoneName) // Hàm phụ trợ gán màu sắc giao diện
-              };
-            }
-
-            zoneMap[zoneName].total += 1;
-            if (isAvailable) {
-              zoneMap[zoneName].remaining += 1;
-            }
-          });
-
-          // Đổ dữ liệu vào state để render UI
-          setBackendZones(zoneMap);
-
-          // Tạo map remaining để map nhanh với state đếm số lượng chọn mua
-          Object.keys(zoneMap).forEach(zName => {
-            remainingMap[zName] = zoneMap[zName].remaining;
-          });
-          setZoneRemaining(remainingMap);
-        }
-      })
-      .catch(err => console.warn('Seats/Zones fetch error:', err));
-  }, [event?.id]);
-
-  // Hàm hỗ trợ gán màu sắc đẹp mắt cho từng zone dựa theo tên
-  const getZoneColor = (name) => {
-    const upper = name.toUpperCase();
-    if (upper.includes('VIP')) return '#ec4899'; // Hồng
-    if (upper.includes('REGULAR') || upper.includes('STD')) return '#3b82f6'; // Xanh dương
-    return '#10b981'; // Xanh lá mặc định
+  const singleSeatTier = {
+    ...baseSingleSeatTier,
+    price: effectiveSeatPrice
   };
 
-  // Kiểm tra nếu được redirect về từ PayOS thành công
+  // Đồng bộ trực tiếp danh sách ghế từ Backend khi khởi tạo hoặc khi event/user đổi
+  useEffect(() => {
+    reloadBackendSeats();
+  }, [event?.id, user?.id]);
+
+  // --- HÀM XỬ LÝ HỦY GIỮ GHẾ (Giải phóng ghế trên Database và khôi phục giao diện) ---
+  const handleCancelReservation = async (silent = false) => {
+    try {
+      const token = localStorage.getItem('token') || user?.token;
+      const storageKey = `event_reservation_${event?.id}`;
+      const savedReservation = localStorage.getItem(storageKey);
+      let parsed = null;
+      if (savedReservation) {
+        try { parsed = JSON.parse(savedReservation); } catch (e) {}
+      }
+
+      // Thu thập ID các ghế cần hủy giữ chỗ
+      let seatIdsToRelease = [];
+      if (reservedSeatIds && reservedSeatIds.length > 0) {
+        seatIdsToRelease.push(...reservedSeatIds);
+      }
+      if (isSeated) {
+        selectedSeats.forEach(s => {
+          if (s.id) seatIdsToRelease.push(s.id);
+          else {
+            const found = backendSeats.find(bs => bs.seat_number === s.code || bs.seat_number === s.code.replace('-', ''));
+            if (found?.id) seatIdsToRelease.push(found.id);
+          }
+        });
+      } else {
+        reservedZoneSeats.forEach(s => {
+          if (s.id) seatIdsToRelease.push(s.id);
+        });
+      }
+      if (parsed?.seats && Array.isArray(parsed.seats)) {
+        parsed.seats.forEach(s => {
+          if (s.id) seatIdsToRelease.push(s.id);
+        });
+      }
+
+      seatIdsToRelease = [...new Set(seatIdsToRelease.filter(Boolean))];
+      const userIdToRelease = user?.id || parsed?.userId;
+
+      // Reset state trên giao diện trước
+      localStorage.removeItem(storageKey);
+      setIsReserved(false);
+      setReservedUntilTime(null);
+      setReservedSeatIds([]);
+      if (isSeated) {
+        setSelectedSeats([]);
+      } else {
+        setReservedZoneSeats([]);
+        setZoneQuantities({});
+      }
+
+      // Gọi API Backend nhả ghế
+      if (seatIdsToRelease.length > 0) {
+        await releaseSeats(userIdToRelease, seatIdsToRelease, token).catch(e => console.warn('releaseSeats API warning:', e));
+      }
+
+      // Tải lại dữ liệu ghế mới nhất từ backend
+      reloadBackendSeats();
+
+      if (!silent) {
+        console.log("🚫 Đã hủy phiên giữ ghế thành công.");
+      }
+    } catch (err) {
+      console.error("Lỗi khi hủy giữ ghế:", err);
+      if (!silent) {
+        alert('⚠️ ' + (err.message || 'Không thể hủy giữ ghế. Vui lòng thử lại!'));
+      }
+    }
+  };
+
+  // Kiểm tra nếu được redirect về từ PayOS (thành công hoặc hủy thanh toán)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('status') === 'success') {
+    const status = params.get('status');
+    const isCancel = params.get('cancel') === 'true' || status === 'cancelled' || status === 'cancel';
+
+    if (status === 'success') {
       confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } });
       setBookingStep('success');
+      if (event?.id) {
+        localStorage.removeItem(`event_reservation_${event.id}`);
+      }
+      setIsReserved(false);
+      setReservedUntilTime(null);
+      setReservedSeatIds([]);
+
       if (onPaymentSuccess && event?.id) {
         onPaymentSuccess(event.id, event.event_type || event.type, selectedSeats, zoneQuantities);
       }
@@ -185,8 +297,14 @@ export default function EventDetailPage({
         });
       }
       window.history.replaceState({}, '', window.location.pathname);
+    } else if (isCancel) {
+      // Người dùng bấm Hủy thanh toán hoặc hủy trên PayOS
+      handleCancelReservation(true).then(() => {
+        alert('ℹ️ Bạn đã hủy giao dịch thanh toán. Các vị trí/vé đã chọn đã được mở lại để bạn có thể chọn tiếp.');
+      });
+      window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [event?.id, event?.title, event?.event_type, event?.type, eventDate, eventTime, eventVenue, isSeated, onAddToCart, onPaymentSuccess, selectedSeats, zoneQuantities]);
+  }, [event?.id, event?.title, event?.event_type, event?.type, eventDate, eventTime, eventVenue, isSeated, onAddToCart, onPaymentSuccess]);
 
   // Format schema ghế từ BE 
   const [groupedSeats, setGroupedSeats] = useState({});
@@ -194,51 +312,132 @@ export default function EventDetailPage({
   useEffect(() => {
     if (!backendSeats || backendSeats.length === 0) return;
 
-    // Thuật toán nhóm các ghế theo hàng (Ví dụ: "A1" -> Hàng "A", Ghế số "1")
-    const formattedRows = backendSeats.reduce((acc, seat) => {
-      // Tách phần chữ cái (hàng) và phần số (cột/số ghế) từ seat_number (VD: "A12" -> hàng "A", số "12")
-      const match = seat.seat_number.match(/^([A-Za-z]+)(\d+)?$/);
-      if (!match) return acc;
-
-      const rowName = match[1].toUpperCase(); // Lấy chữ cái làm tên hàng (VD: 'A', 'B')
-      const colNumber = parseInt(match[2], 10); // Lấy phần số
-
-      if (!acc[rowName]) {
-        acc[rowName] = [];
-      }
-
-      // Đẩy toàn bộ object ghế vào mảng của hàng tương ứng để tận dụng luôn thông tin id, status từ BE
-      acc[rowName].push({
+    // Phân tích danh sách ghế từ BE
+    const rawParsed = backendSeats.map(seat => {
+      const match = (seat.seat_number || '').match(/^([A-Za-z]+)?(\d+)?$/);
+      const letter = match && match[1] ? match[1].toUpperCase() : '';
+      const num = match && match[2] ? parseInt(match[2], 10) : 0;
+      return {
         ...seat,
-        colNumber
-      });
-
-      return acc;
-    }, {});
-
-    // Sắp xếp các số ghế trong từng hàng tăng dần (1, 2, 3, ...)
-    Object.keys(formattedRows).forEach(row => {
-      formattedRows[row].sort((a, b) => a.colNumber - b.colNumber);
+        rawLetter: letter,
+        rawNum: num
+      };
     });
+
+    const distinctLetters = new Set(rawParsed.map(s => s.rawLetter).filter(Boolean));
+
+    // 1. Xác định số ghế mỗi hàng từ cấu hình sự kiện
+    let configuredSeatsPerRow = Number(event?.seatsPerRow || event?.seatConfig?.seatsPerRow || 0);
+    let configuredRowsCount = Number(event?.rowsCount || event?.seatConfig?.rowsCount || 0);
+
+    // Kiểm tra trong localStorage
+    if ((!configuredSeatsPerRow || !configuredRowsCount) && typeof window !== 'undefined' && window.localStorage && event?.id) {
+      try {
+        const stored = localStorage.getItem(`EVENT_LAYOUT_${event.id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (!configuredRowsCount && parsed.rowsCount) configuredRowsCount = Number(parsed.rowsCount);
+          if (!configuredSeatsPerRow && parsed.seatsPerRow) configuredSeatsPerRow = Number(parsed.seatsPerRow);
+        }
+      } catch (e) {}
+    }
+
+    // Kiểm tra trong highlights nếu có lưu thông tin layout (LAYOUT:ROWS=X;COLS=Y)
+    if ((!configuredSeatsPerRow || !configuredRowsCount) && Array.isArray(event?.highlights)) {
+      for (const h of event.highlights) {
+        if (typeof h === 'string') {
+          const m = h.match(/LAYOUT:ROWS=(\d+);COLS=(\d+)/);
+          if (m) {
+            if (!configuredRowsCount) configuredRowsCount = parseInt(m[1], 10);
+            if (!configuredSeatsPerRow) configuredSeatsPerRow = parseInt(m[2], 10);
+            break;
+          }
+        }
+      }
+    }
+
+    // Phân tích từ tiêu đề sự kiện (VD: "Test 5 x 7" -> 5 hàng, 7 ghế mỗi hàng)
+    if ((!configuredSeatsPerRow || !configuredRowsCount) && event?.title) {
+      const tm = event.title.match(/(\d+)\s*[xX*]\s*(\d+)/);
+      if (tm) {
+        if (!configuredRowsCount) configuredRowsCount = parseInt(tm[1], 10);
+        if (!configuredSeatsPerRow) configuredSeatsPerRow = parseInt(tm[2], 10);
+      }
+    }
+
+    // Nếu ghế đã có số cột cụ thể (như A1..A5, B1..B5), lấy số cột lớn nhất
+    const maxColInSeats = Math.max(0, ...rawParsed.map(s => s.rawNum || 0));
+    if (maxColInSeats > 0 && distinctLetters.size > 1) {
+      configuredSeatsPerRow = maxColInSeats;
+      if (!configuredRowsCount) configuredRowsCount = distinctLetters.size;
+    }
+
+    // Nếu có số hàng, tính số ghế mỗi hàng từ tổng số ghế thực tế
+    if (!configuredSeatsPerRow && configuredRowsCount > 0 && backendSeats.length > 0) {
+      configuredSeatsPerRow = Math.ceil(backendSeats.length / configuredRowsCount);
+    }
+
+    const seatsPerRow = configuredSeatsPerRow > 0 ? configuredSeatsPerRow : 12;
+
+    const getRowLetter = (idx) => {
+      if (idx < 0) return '';
+      if (idx < 26) return String.fromCharCode(65 + idx);
+      return String.fromCharCode(64 + Math.floor(idx / 26)) + String.fromCharCode(65 + (idx % 26));
+    };
+
+    let formattedRows = {};
+
+    // TH1: Ghế chỉ có 1 tiền tố chung (ví dụ chỉ có 'S' cho S1..S15) hoặc không có chữ cái
+    if (distinctLetters.size <= 1) {
+      // Tự động chia các ghế thành các hàng theo cấu hình seatsPerRow
+      const sortedSeats = [...rawParsed].sort((a, b) => a.rawNum - b.rawNum);
+      sortedSeats.forEach((seat, idx) => {
+        const rowIndex = Math.floor(idx / seatsPerRow);
+        const colIndex = (idx % seatsPerRow) + 1;
+        const rowName = getRowLetter(rowIndex);
+
+        if (!formattedRows[rowName]) {
+          formattedRows[rowName] = [];
+        }
+
+        formattedRows[rowName].push({
+          ...seat,
+          colNumber: colIndex,
+          seatCol: colIndex,
+          rowLetter: rowName,
+          displayCode: `${rowName}${colIndex}`
+        });
+      });
+    } else {
+      // TH2: Ghế đã có mã hàng rõ ràng (A1..A5, B1..B5, C1..C5...)
+      formattedRows = rawParsed.reduce((acc, seat) => {
+        const rowName = seat.rawLetter || 'A';
+        const colNumber = seat.rawNum || 1;
+
+        if (!acc[rowName]) {
+          acc[rowName] = [];
+        }
+
+        acc[rowName].push({
+          ...seat,
+          colNumber,
+          seatCol: colNumber,
+          rowLetter: rowName,
+          displayCode: seat.seat_number
+        });
+
+        return acc;
+      }, {});
+
+      // Sắp xếp các ghế trong từng hàng theo colNumber
+      Object.keys(formattedRows).forEach(row => {
+        formattedRows[row].sort((a, b) => a.colNumber - b.colNumber);
+      });
+    }
 
     // Lưu vào state để render giao diện
     setGroupedSeats(formattedRows);
-  }, [backendSeats]);
-
-  // Trạng thái quản lý việc đã giữ ghế thành công hay chưa
-  const [isReserved, setIsReserved] = useState(false);
-
-  // Danh sách ID ghế đã giữ thành công từ Backend (dùng cho cả SEAT_BASED và ZONE_BASED khi thanh toán)
-  const [reservedSeatIds, setReservedSeatIds] = useState([]);
-
-  // Thời điểm hết hạn giữ ghế (lấy từ trường reserved_until của server trả về)
-  const [reservedUntilTime, setReservedUntilTime] = useState(null);
-
-  // Số giây còn lại để đếm ngược hiển thị lên giao diện
-  const [countdownSeconds, setCountdownSeconds] = useState(0);
-
-  // Trạng thái xử lý thanh toán
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  }, [backendSeats, event?.seatsPerRow, event?.rowsCount, event?.seatConfig, event?.highlights]);
 
   useEffect(() => {
     if (!reservedUntilTime) return;
@@ -252,17 +451,15 @@ export default function EventDetailPage({
 
       if (distance <= 0) {
         clearInterval(interval);
-        // Hết thời gian giữ ghế: reset lại trạng thái để người dùng chọn lại
-        setIsReserved(false);
-        setReservedUntilTime(null);
-        setReservedSeatIds([]);
-        alert('⏰ Thời gian giữ ghế đã hết. Vui lòng thực hiện lại!');
+        // Hết thời gian giữ ghế: tự động giải phóng ghế trên Backend và khôi phục giao diện
+        handleCancelReservation(true).then(() => {
+          alert('⏰ Thời gian giữ ghế đã hết. Các ghế đã được mở lại!');
+        });
       }
     }, 1000);
 
     return () => clearInterval(interval);
   }, [reservedUntilTime]);
-
 
   // Hàm format giây thành dạng MM:SS để hiển thị cho đẹp
   const formatCountdown = (totalSeconds) => {
@@ -277,65 +474,28 @@ export default function EventDetailPage({
   // --- LOGIC SEATED-BASED ---
   const handleToggleSeat = (seat, tier = singleSeatTier) => {
     const seatId = seat.id;
-    const seatCode = seat.seat_number;
-    if (occupiedSeats.has(seatCode)) return;
-    const isAlreadySelected = selectedSeats.some(s => s.code === seatCode);
+    const seatCode = seat.displayCode || seat.seat_number;
+    if (occupiedSeats.has(seat.seat_number) || (seatId && occupiedSeats.has(seatId))) return;
+    const isAlreadySelected = selectedSeats.some(s => (seatId && s.id === seatId) || s.code === seatCode);
     if (isAlreadySelected) {
-      setSelectedSeats(prev => prev.filter(s => s.code !== seatCode));
+      setSelectedSeats(prev => prev.filter(s => (seatId ? s.id !== seatId : s.code !== seatCode)));
     } else {
       if (selectedSeats.length >= 5) {
         alert('⚠️ Bạn chỉ được chọn tối đa 5 ghế cho mỗi đơn hàng theo quy định!');
         return;
       }
-      const match = backendSeats.find(bs => bs.seat_number === seatCode || bs.seat_number === seatCode.replace('-', ''));
+
+      const seatP = (seat.price != null && Number(seat.price) > 0)
+        ? Number(seat.price)
+        : (tier?.price || singleSeatTier.price);
 
       setSelectedSeats(prev => [...prev, {
-        id: match?.id,
+        id: seatId,
         code: seatCode,
         tier: tier.name || singleSeatTier.name,
-        price: seat.price,
+        price: seatP,
         color: tier.color || singleSeatTier.color
       }]);
-    }
-  };
-
-  // --- HÀM XỬ LÝ HỦY GIỮ GHẾ (Đã tích hợp gọi API Backend) ---
-  const handleCancelReservation = async () => {
-    try {
-      const token = localStorage.getItem('token') || user?.token;
-
-      // Lấy danh sách seatIds đang được giữ tùy theo loại sự kiện
-      let seatIdsToRelease = [];
-      if (isSeated) {
-        seatIdsToRelease = selectedSeats.map(s => s.id).filter(Boolean);
-      } else {
-        seatIdsToRelease = reservedZoneSeats.map(s => s.id).filter(Boolean);
-      }
-
-      // Nếu có ID ghế, gọi API yêu cầu Backend nhả khóa ghế trong Database
-      if (seatIdsToRelease.length > 0 && user?.id) {
-        await releaseSeats(user.id, seatIdsToRelease, token);
-      }
-
-      // 1. Xóa dữ liệu giữ chỗ trong localStorage
-      const storageKey = `event_reservation_${event.id}`;
-      localStorage.removeItem(storageKey);
-
-      // 2. Reset lại toàn bộ state liên quan đến việc giữ ghế ở Frontend
-      setIsReserved(false);
-      setReservedUntilTime(null);
-
-      if (isSeated) {
-        setSelectedSeats([]);
-      } else {
-        setReservedZoneSeats([]);
-        setZoneQuantities({});
-      }
-
-      console.log("🚫 Đã hủy phiên giữ ghế thành công trên cả Database và Frontend.");
-    } catch (err) {
-      console.error("Lỗi khi hủy giữ ghế:", err);
-      alert('⚠️ ' + (err.message || 'Không thể hủy giữ ghế. Vui lòng thử lại!'));
     }
   };
 
@@ -456,8 +616,15 @@ export default function EventDetailPage({
           }
         }
       } else {
-        // Nếu đã quá hạn hoặc khác user -> Xóa rác trong localStorage
+        // Nếu đã quá hạn hoặc khác user -> Xóa rác trong localStorage và giải phóng ghế trên Backend nếu cần
         localStorage.removeItem(storageKey);
+        if (parsedData.seats && Array.isArray(parsedData.seats)) {
+          const ids = parsedData.seats.map(s => s.id).filter(Boolean);
+          if (ids.length > 0) {
+            const token = localStorage.getItem('token') || user?.token;
+            releaseSeats(parsedData.userId || user?.id, ids, token).then(() => reloadBackendSeats()).catch(() => {});
+          }
+        }
       }
     } catch (err) {
       console.error("Lỗi khi đọc dữ liệu giữ ghế từ localStorage:", err);
@@ -651,12 +818,15 @@ export default function EventDetailPage({
     <div
       className="event-detail-page-container"
       style={{
+        width: '100%',
         maxWidth: '1280px',
         margin: '0 auto',
         padding: 'clamp(12px, 3vw, 24px)',
         paddingBottom: (hasSelections && activeTab === 'booking' && bookingStep === 'booking' && !isUpcoming)
           ? 'clamp(90px, 15vw, 120px)'
-          : '32px'
+          : '32px',
+        boxSizing: 'border-box',
+        overflowX: 'hidden'
       }}
     >
       {/* Top back button */}
@@ -690,6 +860,9 @@ export default function EventDetailPage({
           position: 'relative',
           borderRadius: 'var(--radius-xl)',
           overflow: 'hidden',
+          width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
           minHeight: 'clamp(210px, 30vw, 290px)',
           display: 'flex',
           alignItems: 'flex-end',
@@ -895,10 +1068,31 @@ export default function EventDetailPage({
 
       {/* TAB: BOOKING - Bước 1: Chọn vé */}
       {activeTab === 'booking' && bookingStep === 'booking' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }} className="booking-layout-grid">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr)',
+            gap: '24px',
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box'
+          }}
+          className="booking-layout-grid"
+        >
 
           {/* CỘT TRÁI */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: 'clamp(16px, 3.5vw, 28px)' }}>
+          <div
+            className="glass-panel"
+            style={{
+              borderRadius: 'var(--radius-lg)',
+              padding: 'clamp(14px, 3.5vw, 28px)',
+              width: '100%',
+              maxWidth: '100%',
+              minWidth: 0,
+              boxSizing: 'border-box',
+              overflow: 'hidden'
+            }}
+          >
             {/* Header thông báo */}
             <div
               style={{
@@ -909,29 +1103,32 @@ export default function EventDetailPage({
                 borderRadius: 'var(--radius-md)',
                 backgroundColor: isUpcoming ? 'rgba(245, 158, 11, 0.1)' : 'rgba(99, 102, 241, 0.1)',
                 border: isUpcoming ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid rgba(99, 102, 241, 0.25)',
-                marginBottom: '24px'
+                marginBottom: '24px',
+                width: '100%',
+                maxWidth: '100%',
+                boxSizing: 'border-box'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
                 <ShieldCheck size={20} color={isUpcoming ? "var(--accent-amber)" : "var(--primary-light)"} style={{ flexShrink: 0 }} />
-                <span style={{ fontSize: '13.5px', fontWeight: 600, lineHeight: 1.4 }}>
+                <span style={{ fontSize: '13.5px', fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
                   {isUpcoming
                     ? 'Sự kiện sắp diễn ra - Hệ thống chưa mở bán vé chính thức.'
                     : (isSeated
-                      ? `Chế độ Seated-based: Sự kiện áp dụng đồng giá 1 loại ghế duy nhất (${formatVND(singleSeatTier.price)}). Tối đa 5 ghế.`
-                      : 'Chế độ Zone-based: Đặt vé theo khu vực đứng/vé mở (Tối đa 5 vé).')}
+                      ? `Chế độ Seated-based: Quy mô ${backendSeats.length || event?.totalSeats || 84} ghế (${Object.keys(groupedSeats).length || event?.rowsCount || 7} hàng) • Đồng giá ${formatVND(singleSeatTier.price)} / ghế (Tối đa 5 ghế).`
+                      : `Chế độ Zone-based: Đặt vé theo khu vực đứng/vé mở • Tổng ${Object.values(backendZones).reduce((sum, z) => sum + (z.total || 0), 0) || event?.totalTickets || 0} vé phát hành (Tối đa 5 vé).`)}
                 </span>
               </div>
             </div>
 
             {/* SEATED-BASED: Sơ đồ ghế (1 loại ghế duy nhất) */}
             {isSeated && (
-              <div>
-                <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+              <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                   <div
                     style={{
                       margin: '0 auto 8px',
-                      width: 'clamp(200px, 70%, 420px)',
+                      width: 'clamp(180px, 60%, 420px)',
                       height: '14px',
                       borderRadius: '8px 8px 50% 50%',
                       background: 'linear-gradient(90deg, #ec4899 0%, #6366f1 50%, #ec4899 100%)',
@@ -954,45 +1151,76 @@ export default function EventDetailPage({
                     padding: '10px 14px',
                     borderRadius: 'var(--radius-md)',
                     backgroundColor: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)'
+                    border: '1px solid var(--border-color)',
+                    width: '100%',
+                    maxWidth: '100%',
+                    boxSizing: 'border-box'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', backgroundColor: singleSeatTier.color }} />
+                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', backgroundColor: singleSeatTier.color, flexShrink: 0 }} />
                     <span style={{ fontWeight: 600 }}>{singleSeatTier.name}</span>
                     <span style={{ color: 'var(--text-muted)' }}>({formatVND(singleSeatTier.price)})</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', backgroundColor: '#334155' }} />
+                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', backgroundColor: '#334155', flexShrink: 0 }} />
                     <span style={{ color: 'var(--text-dim)' }}>Đã bán</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', border: '2px solid #fff', backgroundColor: 'var(--accent-pink)' }} />
+                    <div style={{ width: '13px', height: '13px', borderRadius: '4px', border: '2px solid #fff', backgroundColor: 'var(--accent-pink)', flexShrink: 0 }} />
                     <span style={{ color: '#fff', fontWeight: 700 }}>Đang chọn</span>
                   </div>
                 </div>
 
-                <div style={{ overflowX: 'auto', paddingBottom: '16px' }}>
-                  <div style={{ minWidth: '500px', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
+                {/* Sơ đồ ghế cố định, hiển thị đầy đủ, KHÔNG có thanh cuộn ngang */}
+                <div
+                  className="seat-chart-container"
+                  style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    padding: '8px 0',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <div
+                    className="seat-chart-grid"
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      margin: '0 auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                      alignItems: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
                     {
                       // Duyệt qua các tên hàng được sinh ra tự động từ dữ liệu BE (VD: ['A', 'B', 'C'])
                       Object.keys(groupedSeats).sort().map(row => {
                         const rowSeats = groupedSeats[row]; // Mảng các ghế trong hàng này
                         return (
-                          <div key={row} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            key={row}
+                            className="seating-row"
+                          >
                             {/* Ký hiệu hàng bên trái */}
-                            <span style={{ width: '24px', fontWeight: 700, color: 'var(--text-dim)', textAlign: 'center', fontSize: '13px' }}>{row}</span>
+                            <span className="row-label">
+                              {row}
+                            </span>
 
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                            <div className="seat-row-btns">
                               {
                                 rowSeats.map(seat => {
                                   // Lấy trực tiếp id và seat_number từ object ghế của BE trả về
                                   const seatId = seat.id;
-                                  const seatCode = seat.seat_number; // VD: "A1", "A10"
+                                  const seatCode = seat.seat_number; // VD: "A1", "A2", "A12"
+                                  const seatCol = seat.colNumber || seatCode.replace(/^[A-Za-z]+/, '');
 
                                   // Kiểm tra trạng thái dựa trên dữ liệu thật từ BE
-                                  const isOccupied = isUpcoming || seat.status === 'SOLD' || occupiedSeats.has(seatId);
-                                  const isSelected = !isUpcoming && selectedSeats.some(s => s.id === seatId);
+                                  const isOccupied = isUpcoming || seat.status === 'SOLD' || occupiedSeats.has(seatCode) || (seatId && occupiedSeats.has(seatId));
+                                  const isSelected = !isUpcoming && selectedSeats.some(s => (seatId && s.id === seatId) || s.code === seatCode);
 
                                   let bg = singleSeatTier.color;
                                   let cursor = 'pointer';
@@ -1008,31 +1236,36 @@ export default function EventDetailPage({
 
                                   return (
                                     <button
-                                      key={seatId}
-                                      // Truyền trực tiếp seatId hoặc object seat lên hàm xử lý ở FE để map với BE
+                                      key={seatId || seatCode}
                                       onClick={() => handleToggleSeat(seat, singleSeatTier)}
                                       disabled={isOccupied}
                                       title={isUpcoming ? `Ghế ${seatCode} (Sự kiện chưa mở bán)` : (isOccupied ? `Ghế ${seatCode} đã có người mua` : `Ghế ${seatCode}\n${singleSeatTier.name} (${formatVND(seat.price)})`)}
+                                      className="seat-btn"
                                       style={{
-                                        width: '36px', height: '36px', borderRadius: '8px',
-                                        backgroundColor: bg, color: '#fff', fontSize: '11px', fontWeight: 700,
-                                        cursor, opacity,
+                                        backgroundColor: bg,
+                                        color: '#fff',
+                                        cursor,
+                                        opacity,
                                         border: isSelected ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
-                                        transform: isSelected ? 'scale(1.1)' : 'scale(1)',
+                                        transform: isSelected ? 'scale(1.15)' : 'scale(1)',
                                         boxShadow: isSelected ? '0 0 12px var(--accent-pink)' : 'none',
-                                        transition: 'all 0.15s ease'
+                                        transition: 'all 0.15s ease',
+                                        padding: 0
                                       }}
                                     >
-                                      {/* Hiển thị số thứ tự ghế bên trong nút (VD: 1, 2, 10, 11) */}
-                                      {seatCode}
+                                      {/* Hiển thị số thứ tự ghế bên trong nút (A1..A12 trên desktop, 1..12 trên mobile) */}
+                                      <span className="seat-code-full">{seat.displayCode || seatCode}</span>
+                                      <span className="seat-code-short">{seat.seatCol || seatCol}</span>
                                     </button>
                                   );
                                 })
                               }
                             </div>
 
-                            {/* Ký hiệu hàng bên phải (tùy chọn) */}
-                            <span style={{ width: '24px', fontWeight: 700, color: 'var(--text-dim)', textAlign: 'center', fontSize: '13px' }}>{row}</span>
+                            {/* Ký hiệu hàng bên phải */}
+                            <span className="row-label">
+                              {row}
+                            </span>
                           </div>
                         );
                       })
@@ -1040,8 +1273,9 @@ export default function EventDetailPage({
                   </div>
                 </div>
 
-                <div style={{ textAlign: 'center', marginTop: '14px', fontSize: '12px', color: 'var(--text-dim)' }}>
-                  * Nhấp vào ghế trống để chọn hoặc bỏ chọn. Đồng giá <strong>{formatVND(singleSeatTier.price)}</strong> / ghế. Tối đa 5 ghế.
+                <div style={{ textAlign: 'center', marginTop: '14px', fontSize: '13px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+                  * Tổng số ghế: <strong style={{ color: '#fff' }}>{backendSeats.length || event?.totalSeats || 84} ghế</strong> ({Object.keys(groupedSeats).length || event?.rowsCount || 7} hàng {Object.keys(groupedSeats).length > 0 ? `A-${Object.keys(groupedSeats).sort().slice(-1)[0]}` : ''}). 
+                  Còn trống: <strong style={{ color: 'var(--accent-emerald)' }}>{backendSeats.filter(s => s.status === 'AVAILABLE' && !occupiedSeats.has(s.seat_number) && !occupiedSeats.has(s.id)).length} ghế</strong>. Đồng giá <strong style={{ color: 'var(--accent-pink)' }}>{formatVND(singleSeatTier.price)}</strong> / ghế. Tối đa 5 ghế.
                 </div>
 
               </div>
@@ -1049,11 +1283,11 @@ export default function EventDetailPage({
 
             {/* ZONE-BASED */}
             {!isSeated && (
-              <div style={{ opacity: isUpcoming ? 0.4 : 1, pointerEvents: isUpcoming ? 'none' : 'auto' }}>
+              <div style={{ opacity: isUpcoming ? 0.4 : 1, pointerEvents: isUpcoming ? 'none' : 'auto', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px', color: '#fff' }}>
                   Danh sách khu vực & Hạng vé
                 </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                   {
                     Object.keys(backendZones).map(zoneName => {
                       const zone = backendZones[zoneName];
@@ -1064,8 +1298,9 @@ export default function EventDetailPage({
                       return (
                         <div
                           key={zoneName}
+                          className="zone-item-card"
                           style={{
-                            padding: '20px',
+                            padding: 'clamp(14px, 3vw, 20px)',
                             borderRadius: 'var(--radius-md)',
                             backgroundColor: 'var(--bg-secondary)',
                             border: qty > 0 ? '1px solid var(--accent-pink)' : '1px solid var(--border-color)',
@@ -1074,12 +1309,15 @@ export default function EventDetailPage({
                             justifyContent: 'space-between',
                             flexWrap: 'wrap',
                             gap: '16px',
-                            transition: 'var(--transition)'
+                            transition: 'var(--transition)',
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box'
                           }}
                         >
-                          <div style={{ flex: 1, minWidth: '240px' }}>
+                          <div className="zone-item-info" style={{ flex: 1, minWidth: '200px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                              <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color }} />
+                              <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color, flexShrink: 0 }} />
                               <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>{zone.name}</h4>
                             </div>
                             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
@@ -1094,7 +1332,7 @@ export default function EventDetailPage({
                             </div>
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                          <div className="zone-item-action" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                             <div style={{ textAlign: 'right' }}>
                               <div style={{ fontSize: '17px', fontWeight: 800, color: 'var(--accent-pink)' }}>{formatVND(zone.price)}</div>
                               <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>/ 1 vé</div>
@@ -1139,7 +1377,18 @@ export default function EventDetailPage({
           </div>
 
           {/* CỘT PHẢI: TỔNG QUAN ĐẶT VÉ (STICKY DESKTOP, EMBEDDED MOBILE) */}
-          <div className="glass-panel booking-summary-panel" style={{ borderRadius: 'var(--radius-lg)', padding: 'clamp(16px, 3.5vw, 24px)', height: 'fit-content' }}>
+          <div
+            className="glass-panel booking-summary-panel"
+            style={{
+              borderRadius: 'var(--radius-lg)',
+              padding: 'clamp(14px, 3.5vw, 24px)',
+              height: 'fit-content',
+              width: '100%',
+              maxWidth: '100%',
+              minWidth: 0,
+              boxSizing: 'border-box'
+            }}
+          >
             <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '16px', color: '#fff', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               Thông tin đặt vé
             </h3>
@@ -1207,7 +1456,24 @@ export default function EventDetailPage({
             </div>
 
             {!user && (
-              <div style={{ padding: '10px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', color: '#fcd34d', fontSize: '12px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                  color: '#fcd34d',
+                  fontSize: '12px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  wordBreak: 'break-word'
+                }}
+              >
                 <AlertTriangle size={15} style={{ flexShrink: 0 }} />
                 <span>Bạn cần đăng nhập để hoàn tất giữ chỗ và nhận vé qua email.</span>
               </div>
@@ -1219,38 +1485,50 @@ export default function EventDetailPage({
                 disabled={!hasSelections || isProcessingPayment || isUpcoming}
                 className="glow-btn-pink"
                 style={{
-                  width: '100%', padding: '14px', fontSize: '15px', fontWeight: 700,
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                  width: '100%',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  padding: '13px 14px',
+                  fontSize: 'clamp(13.5px, 2.5vw, 15px)',
+                  fontWeight: 700,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
                   opacity: (!hasSelections || isProcessingPayment || isUpcoming) ? 0.6 : 1,
-                  cursor: (!hasSelections || isProcessingPayment || isUpcoming) ? 'not-allowed' : 'pointer'
+                  cursor: (!hasSelections || isProcessingPayment || isUpcoming) ? 'not-allowed' : 'pointer',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'normal',
+                  textAlign: 'center'
                 }}
               >
                 {isProcessingPayment ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', width: '18px', height: '18px' }} />
-                    Đang kết nối PayOS...
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                    <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', width: '18px', height: '18px', flexShrink: 0 }} />
+                    <span>Đang kết nối PayOS...</span>
                   </div>
                 ) : isUpcoming ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <AlertTriangle size={18} />
-                    Sự kiện chưa mở bán
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                    <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                    <span>Sự kiện chưa mở bán</span>
                   </div>
                 ) : isReserved ? (
                   // TRẠNG THÁI 2: ĐÃ GIỮ GHẾ -> HIỂN THỊ NÚT THANH TOÁN VÀ ĐỒNG HỒ ĐẾM NGƯỢC
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <CreditCard size={18} />
-                      {user ? `Thanh toán qua PayOS • ${formatVND(totalPrice)}` : 'Đăng nhập & Thanh toán'}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '3px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                      <CreditCard size={18} style={{ flexShrink: 0 }} />
+                      <span>{user ? `Thanh toán qua PayOS • ${formatVND(totalPrice)}` : 'Đăng nhập & Thanh toán'}</span>
                     </div>
-                    <span style={{ fontSize: '12px', color: '#ffeb3b', fontWeight: 500 }}>
+                    <span style={{ fontSize: '11.5px', color: '#ffeb3b', fontWeight: 500, wordBreak: 'break-word' }}>
                       ⏱️ Giữ ghế thành công! Hết hạn sau: {formatCountdown(countdownSeconds)}
                     </span>
                   </div>
                 ) : (
                   // TRẠNG THÁI 1: CHƯA GIỮ GHẾ -> HIỂN THỊ NÚT GIỮ GHẾ
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CreditCard size={18} />
-                    {user ? 'Giữ chỗ ngay' : 'Đăng nhập & Giữ chỗ'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <CreditCard size={18} style={{ flexShrink: 0 }} />
+                    <span>{user ? 'Giữ chỗ ngay' : 'Đăng nhập & Giữ chỗ'}</span>
                   </div>
                 )}
               </button>
@@ -1405,79 +1683,129 @@ export default function EventDetailPage({
 
       {/* Scoped CSS for EventDetailPage responsiveness */}
       <style>{`
+        /* Container & Global Scoped Layout */
+        .event-detail-page-container {
+          width: 100% !important;
+          max-width: 1280px !important;
+          box-sizing: border-box !important;
+        }
+
+        .booking-layout-grid {
+          width: 100% !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+
         /* Desktop layout */
         @media (min-width: 992px) {
           .booking-layout-grid {
-            grid-template-columns: 1fr 340px !important;
+            grid-template-columns: minmax(0, 1fr) 350px !important;
           }
           .booking-summary-panel {
             position: sticky !important;
             top: 90px !important;
           }
-          .mobile-scroll-hint {
-            display: none !important;
-          }
-          .mobile-floating-checkout-bar {
-            display: none !important;
-          }
         }
 
         /* Tablet & Mobile layout */
         @media (max-width: 991px) {
+          .booking-layout-grid {
+            grid-template-columns: minmax(0, 1fr) !important;
+            width: 100% !important;
+            max-width: 100% !important;
+          }
           .booking-summary-panel {
             position: static !important;
             margin-top: 8px !important;
+            width: 100% !important;
+            max-width: 100% !important;
           }
         }
 
-        /* Seating chart sizing */
-        .row-label {
-          width: 22px;
-          font-size: 13px;
+        /* Seating chart sizing: 100% Fixed, Displayed in full, NO horizontal scroll */
+        .seat-chart-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow: hidden !important;
+          box-sizing: border-box !important;
         }
+
+        .seat-chart-grid {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 auto !important;
+          display: flex !important;
+          flex-direction: column !important;
+          gap: clamp(5px, 1.2vw, 10px) !important;
+          align-items: center !important;
+          box-sizing: border-box !important;
+        }
+
+        .seating-row {
+          width: 100% !important;
+          max-width: 680px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          gap: clamp(3px, 1vw, 8px) !important;
+          box-sizing: border-box !important;
+        }
+
+        .row-label {
+          width: clamp(14px, 2.5vw, 24px) !important;
+          font-size: clamp(10px, 1.4vw, 13px) !important;
+          font-weight: 800 !important;
+          color: var(--text-dim) !important;
+          text-align: center !important;
+          flex-shrink: 0 !important;
+        }
+
+        .seat-row-btns {
+          display: flex !important;
+          flex-wrap: nowrap !important;
+          align-items: center !important;
+          justify-content: center !important;
+          flex: 1 !important;
+          min-width: 0 !important;
+          max-width: 600px !important;
+          gap: clamp(2px, 0.7vw, 7px) !important;
+        }
+
         .seat-btn {
-          width: 36px;
-          height: 36px;
-          border-radius: 8px;
-          font-size: 11px;
+          flex: 1 1 0 !important;
+          min-width: 0 !important;
+          max-width: 38px !important;
+          aspect-ratio: 1 / 1 !important;
+          height: auto !important;
+          border-radius: clamp(3px, 0.8vw, 8px) !important;
+          font-size: clamp(8px, 1.25vw, 11px) !important;
+          font-weight: 700 !important;
+          flex-shrink: 0 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          box-sizing: border-box !important;
+          transition: all 0.15s ease !important;
+          padding: 0 !important;
+          line-height: 1 !important;
         }
         .seat-btn:active {
           transform: scale(0.92) !important;
         }
 
-        /* Small screens: scale seat buttons so all 56 seats fit on mobile without forced scroll */
-        @media (max-width: 520px) {
-          .row-label {
-            width: 16px !important;
-            font-size: 11px !important;
-          }
-          .seat-row-btns {
-            gap: 4px !important;
-          }
-          .seating-row {
-            gap: 4px !important;
-          }
-          .seat-btn {
-            width: 31px !important;
-            height: 31px !important;
-            border-radius: 6px !important;
-            font-size: 10px !important;
-          }
+        .seat-code-full {
+          display: inline !important;
+        }
+        .seat-code-short {
+          display: none !important;
         }
 
-        @media (max-width: 360px) {
-          .row-label {
-            width: 14px !important;
-            font-size: 10px !important;
+        @media (max-width: 640px) {
+          .seat-code-full {
+            display: none !important;
           }
-          .seat-row-btns {
-            gap: 3px !important;
-          }
-          .seat-btn {
-            width: 26px !important;
-            height: 26px !important;
-            font-size: 9px !important;
-            border-radius: 4px !important;
+          .seat-code-short {
+            display: inline !important;
           }
         }
 
@@ -1495,12 +1823,12 @@ export default function EventDetailPage({
         }
         .zone-item-info {
           flex: 1;
-          min-width: 220px;
+          min-width: 200px;
         }
         .zone-item-action {
           display: flex;
           align-items: center;
-          gap: 20px;
+          gap: 16px;
         }
 
         @media (max-width: 560px) {
