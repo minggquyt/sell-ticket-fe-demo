@@ -26,7 +26,8 @@ import {
   CheckCircle2,
   Clock,
   User,
-  Hash
+  Hash,
+  Menu
 } from 'lucide-react';
 import {
   CATEGORIES,
@@ -114,6 +115,7 @@ export default function AdminPage({
 }) {
   // Tab điều hướng bên aside menu: 'events' (Quản lý sự kiện) | 'tickets' (Quản lý vé)
   const [activeTab, setActiveTab] = useState('events');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // --- QUẢN LÝ SỰ KIỆN STATES ---
   const [searchTerm, setSearchTerm] = useState('');
@@ -368,152 +370,280 @@ export default function AdminPage({
   return (
     <div style={{
       display: 'flex',
-      minHeight: '100vh',
+      flexDirection: 'column',
+      minHeight: '100dvh',
       backgroundColor: 'var(--bg-primary)',
       color: 'var(--text-main)'
     }}>
-      {/* ================= ASIDE BÊN TRÁI ================= */}
-      <aside style={{
-        width: '280px',
-        minWidth: '280px',
+      {/* Mobile Topbar for screens < 1024px */}
+      <header className="admin-mobile-topbar" style={{
+        display: 'none',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
         backgroundColor: '#0a0d16',
-        borderRight: '1px solid var(--border-color)',
-        display: 'flex',
-        flexDirection: 'column',
+        borderBottom: '1px solid var(--border-color)',
         position: 'sticky',
         top: 0,
-        height: '100vh',
-        zIndex: 40
+        zIndex: 45
       }}>
-        {/* Trên cùng: Logo và Tên web */}
-        <div
-          onClick={() => onNavigate && onNavigate('events')}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => setIsMobileSidebarOpen(true)}
+            style={{
+              padding: '8px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              color: '#fff',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer'
+            }}
+            aria-label="Mở menu quản trị"
+          >
+            <Menu size={20} />
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Ticket size={18} color="#ffffff" />
+            </div>
+            <div>
+              <span style={{ fontSize: '16px', fontWeight: 800, color: '#fff' }}>
+                Ticket<span style={{ color: '#ec4899' }}>Verse</span>
+              </span>
+              <span style={{ marginLeft: '6px', fontSize: '10px', color: '#f472b6', fontWeight: 700, backgroundColor: 'rgba(236, 72, 153, 0.2)', padding: '2px 6px', borderRadius: '4px' }}>
+                ADMIN
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Tab pills on mobile topbar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            onClick={() => { setActiveTab('events'); setIsMobileSidebarOpen(false); }}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '12px',
+              fontWeight: 700,
+              backgroundColor: activeTab === 'events' ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+              color: activeTab === 'events' ? '#fff' : 'var(--text-muted)',
+              cursor: 'pointer'
+            }}
+          >
+            Sự kiện
+          </button>
+          <button
+            onClick={() => { setActiveTab('tickets'); setIsMobileSidebarOpen(false); }}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '12px',
+              fontWeight: 700,
+              backgroundColor: activeTab === 'tickets' ? 'var(--accent-pink)' : 'rgba(255,255,255,0.05)',
+              color: activeTab === 'tickets' ? '#fff' : 'var(--text-muted)',
+              cursor: 'pointer'
+            }}
+          >
+            Vé ({ticketsList.length})
+          </button>
+        </div>
+      </header>
+
+      {/* Main layout row */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Mobile backdrop */}
+        {isMobileSidebarOpen && (
+          <div
+            onClick={() => setIsMobileSidebarOpen(false)}
+            className="admin-sidebar-backdrop animate-fade-in"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(5, 7, 12, 0.75)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              zIndex: 90
+            }}
+          />
+        )}
+
+        {/* ================= ASIDE BÊN TRÁI ================= */}
+        <aside 
+          className={`admin-sidebar ${isMobileSidebarOpen ? 'admin-sidebar-open' : ''}`}
           style={{
-            padding: '24px 20px',
-            borderBottom: '1px solid var(--border-color)',
+            width: '280px',
+            minWidth: '280px',
+            backgroundColor: '#0a0d16',
+            borderRight: '1px solid var(--border-color)',
             display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            cursor: 'pointer',
-            userSelect: 'none'
+            flexDirection: 'column',
+            position: 'sticky',
+            top: 0,
+            height: '100dvh',
+            zIndex: 95
           }}
         >
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)'
-          }}>
-            <Ticket size={24} color="#ffffff" />
-          </div>
-          <div>
-            <div style={{
-              fontSize: '20px',
-              fontWeight: 800,
-              letterSpacing: '-0.5px',
-              background: 'linear-gradient(90deg, #fff 0%, #cbd5e1 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>
-              Ticket<span style={{ color: '#ec4899', WebkitTextFillColor: '#ec4899' }}>Verse</span>
+          {/* Trên cùng: Logo và Tên web + Nút đóng trên mobile */}
+          <div
+            style={{
+              padding: '24px 20px',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}
+          >
+            <div
+              onClick={() => onNavigate && onNavigate('events')}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', userSelect: 'none' }}
+            >
+              <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)'
+              }}>
+                <Ticket size={24} color="#ffffff" />
+              </div>
+              <div>
+                <div style={{
+                  fontSize: '20px',
+                  fontWeight: 800,
+                  letterSpacing: '-0.5px',
+                  background: 'linear-gradient(90deg, #fff 0%, #cbd5e1 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent'
+                }}>
+                  Ticket<span style={{ color: '#ec4899', WebkitTextFillColor: '#ec4899' }}>Verse</span>
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: 'var(--accent-pink)',
+                  fontWeight: 700,
+                  letterSpacing: '1px',
+                  textTransform: 'uppercase'
+                }}>
+                  Admin Console
+                </div>
+              </div>
             </div>
+
+            <button
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="admin-sidebar-close-btn"
+              style={{
+                display: 'none',
+                padding: '6px',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                color: 'var(--text-muted)',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+              title="Đóng menu"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Danh sách các mục điều hướng Sidebar */}
+          <div style={{ padding: '20px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{
               fontSize: '11px',
-              color: 'var(--accent-pink)',
               fontWeight: 700,
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
               letterSpacing: '1px',
-              textTransform: 'uppercase'
+              padding: '0 12px 6px'
             }}>
-              Admin Console
+              Hệ thống Quản lý
             </div>
+
+            {/* Mục 1: Quản lý sự kiện (CRUD) */}
+            <button
+              onClick={() => { setActiveTab('events'); setIsMobileSidebarOpen(false); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: activeTab === 'events' ? 'rgba(99, 102, 241, 0.18)' : 'transparent',
+                color: activeTab === 'events' ? '#fff' : 'var(--text-muted)',
+                border: activeTab === 'events' ? '1px solid var(--border-glow)' : '1px solid transparent',
+                fontWeight: 600,
+                fontSize: '14px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'var(--transition)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <LayoutDashboard size={19} color={activeTab === 'events' ? 'var(--primary-light)' : 'var(--text-dim)'} />
+                <span>Quản lý sự kiện</span>
+              </div>
+              <span style={{
+                fontSize: '11px',
+                padding: '2px 8px',
+                borderRadius: 'var(--radius-full)',
+                backgroundColor: activeTab === 'events' ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.06)',
+                color: activeTab === 'events' ? 'var(--primary-light)' : 'var(--text-dim)'
+              }}>
+                {events.length}
+              </span>
+            </button>
+
+            {/* Mục 2: Quản lý vé */}
+            <button
+              onClick={() => { setActiveTab('tickets'); setIsMobileSidebarOpen(false); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: activeTab === 'tickets' ? 'rgba(236, 72, 153, 0.18)' : 'transparent',
+                color: activeTab === 'tickets' ? '#fff' : 'var(--text-muted)',
+                border: activeTab === 'tickets' ? '1px solid rgba(236, 72, 153, 0.35)' : '1px solid transparent',
+                fontWeight: 600,
+                fontSize: '14px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'var(--transition)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Ticket size={19} color={activeTab === 'tickets' ? 'var(--accent-pink)' : 'var(--text-dim)'} />
+                <span>Quản lý vé</span>
+              </div>
+              <span style={{
+                fontSize: '11px',
+                padding: '2px 8px',
+                borderRadius: 'var(--radius-full)',
+                backgroundColor: activeTab === 'tickets' ? 'rgba(236, 72, 153, 0.3)' : 'rgba(255, 255, 255, 0.06)',
+                color: activeTab === 'tickets' ? '#f472b6' : 'var(--text-dim)'
+              }}>
+                {ticketsList.length}
+              </span>
+            </button>
           </div>
-        </div>
-
-        {/* Danh sách các mục điều hướng Sidebar */}
-        <div style={{ padding: '20px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: 'var(--text-dim)',
-            textTransform: 'uppercase',
-            letterSpacing: '1px',
-            padding: '0 12px 6px'
-          }}>
-            Hệ thống Quản lý
-          </div>
-
-          {/* Mục 1: Quản lý sự kiện (CRUD) */}
-          <button
-            onClick={() => setActiveTab('events')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '12px 14px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: activeTab === 'events' ? 'rgba(99, 102, 241, 0.18)' : 'transparent',
-              color: activeTab === 'events' ? '#fff' : 'var(--text-muted)',
-              border: activeTab === 'events' ? '1px solid var(--border-glow)' : '1px solid transparent',
-              fontWeight: 600,
-              fontSize: '14px',
-              textAlign: 'left',
-              cursor: 'pointer',
-              transition: 'var(--transition)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <LayoutDashboard size={19} color={activeTab === 'events' ? 'var(--primary-light)' : 'var(--text-dim)'} />
-              <span>Quản lý sự kiện</span>
-            </div>
-            <span style={{
-              fontSize: '11px',
-              padding: '2px 8px',
-              borderRadius: 'var(--radius-full)',
-              backgroundColor: activeTab === 'events' ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.06)',
-              color: activeTab === 'events' ? 'var(--primary-light)' : 'var(--text-dim)'
-            }}>
-              {events.length}
-            </span>
-          </button>
-
-          {/* Mục 2: Quản lý vé */}
-          <button
-            onClick={() => setActiveTab('tickets')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '12px 14px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: activeTab === 'tickets' ? 'rgba(236, 72, 153, 0.18)' : 'transparent',
-              color: activeTab === 'tickets' ? '#fff' : 'var(--text-muted)',
-              border: activeTab === 'tickets' ? '1px solid rgba(236, 72, 153, 0.35)' : '1px solid transparent',
-              fontWeight: 600,
-              fontSize: '14px',
-              textAlign: 'left',
-              cursor: 'pointer',
-              transition: 'var(--transition)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Ticket size={19} color={activeTab === 'tickets' ? 'var(--accent-pink)' : 'var(--text-dim)'} />
-              <span>Quản lý vé</span>
-            </div>
-            <span style={{
-              fontSize: '11px',
-              padding: '2px 8px',
-              borderRadius: 'var(--radius-full)',
-              backgroundColor: activeTab === 'tickets' ? 'rgba(236, 72, 153, 0.3)' : 'rgba(255, 255, 255, 0.06)',
-              color: activeTab === 'tickets' ? '#f472b6' : 'var(--text-dim)'
-            }}>
-              {ticketsList.length}
-            </span>
-          </button>
-        </div>
 
         {/* Góc dưới sidebar: Admin profile & Đăng xuất */}
         <div style={{
@@ -563,7 +693,7 @@ export default function AdminPage({
         flex: 1,
         minWidth: 0, // Cực kỳ quan trọng để bảng trượt ngang không làm vỡ flex container
         overflowX: 'hidden',
-        padding: '32px 36px',
+        padding: 'clamp(16px, 3.5vw, 32px) clamp(12px, 3vw, 32px)',
         backgroundColor: 'var(--bg-primary)'
       }}>
         {/* ================= TAB 1: QUẢN LÝ SỰ KIỆN ================= */}
@@ -1187,6 +1317,7 @@ export default function AdminPage({
           </div>
         )}
       </main>
+      </div>
 
       {/* ================= MODAL THÊM / SỬA SỰ KIỆN ================= */}
       {isModalOpen && (
@@ -1248,7 +1379,7 @@ export default function AdminPage({
               </div>
 
               {/* Loại vé và Trạng thái */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                     Loại hình đặt vé *
@@ -1280,7 +1411,7 @@ export default function AdminPage({
               </div>
 
               {/* Thể loại & Ban tổ chức */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                     Thể loại
@@ -1327,7 +1458,7 @@ export default function AdminPage({
               </div>
 
               {/* Ngày và Địa điểm */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                     Ngày diễn ra (Date / Start Time) *
@@ -1408,7 +1539,7 @@ export default function AdminPage({
                     💡 Sự kiện Seated-based áp dụng cho toàn bộ các hàng ghế (A đến G). Giá vé sẽ áp dụng đồng nhất cho mọi ghế ngồi.
                   </p>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '16px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                         Tên loại ghế *
@@ -1485,7 +1616,7 @@ export default function AdminPage({
                 </div>
               ) : (
                 /* Giá vé tối thiểu & tối đa cho Zone-based */
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '16px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                       Giá vé tối thiểu (VNĐ) *
@@ -1698,6 +1829,37 @@ export default function AdminPage({
           </div>
         </div>
       )}
+      <style>{`
+        @media (max-width: 1023px) {
+          .admin-mobile-topbar {
+            display: flex !important;
+          }
+          .admin-sidebar {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            bottom: 0 !important;
+            z-index: 100 !important;
+            transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.85);
+          }
+          .admin-sidebar-open {
+            transform: translateX(0) !important;
+          }
+          .admin-sidebar-close-btn {
+            display: flex !important;
+          }
+        }
+        @media (min-width: 1024px) {
+          .admin-sidebar-close-btn {
+            display: none !important;
+          }
+          .admin-sidebar-backdrop {
+            display: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
