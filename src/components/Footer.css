@@ -1,0 +1,87 @@
+/* Chân trang toàn cục (Phần 3a) — chuyển 1:1 từ style tĩnh trong App.jsx */
+
+.app-footer {
+  border-top: 1px solid var(--border-color);
+  background-color: rgba(10, 13, 20, 0.95);
+  padding: clamp(32px, 5vw, 48px) clamp(16px, 3.5vw, 24px) 24px;
+  margin-top: auto;
+}
+
+.app-footer-grid {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: clamp(20px, 3.5vw, 32px);
+  margin-bottom: 32px;
+}
+
+.app-footer-logo {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 14px;
+}
+
+.app-footer-logo-accent {
+  color: var(--accent-pink);
+}
+
+.app-footer-desc {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.app-footer-heading {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 14px;
+}
+
+.app-footer-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.app-footer-link {
+  cursor: pointer;
+}
+
+.app-footer-support {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.app-footer-secure {
+  margin-top: 8px;
+  color: var(--accent-emerald);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-footer-bottom {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.app-footer-bottom-links {
+  display: flex;
+  gap: 16px;
+}

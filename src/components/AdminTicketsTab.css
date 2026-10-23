@@ -1,0 +1,428 @@
+/* AdminTicketsTab.css — CSS riêng của AdminTicketsTab.jsx.
+   File tạo ở Phần 3c; toàn bộ style tĩnh chuyển từ inline style ở Phần 4c.
+   Nút chuyển chế độ xem dùng .active; hover hàng bảng bằng :hover;
+   huy hiệu trạng thái: .atk-badge + .paid/.checked/.cancelled. */
+
+.atk-root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.atk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.atk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background-color: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.atk-title {
+  font-size: clamp(20px, 3.5vw, 28px);
+  font-weight: 800;
+  color: #fff;
+  margin: 0;
+}
+.atk-sub {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+.atk-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.atk-count-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.atk-count-num {
+  color: #fff;
+}
+.atk-reload-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  background-color: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.3);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Thanh lọc */
+.atk-filter-panel {
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.atk-search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.atk-icon-fixed {
+  flex-shrink: 0;
+}
+.atk-search-input {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  width: 100%;
+}
+.atk-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.atk-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.atk-filter-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.atk-filter-select {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: #fff;
+  font-size: 13px;
+}
+.atk-filter-select-event {
+  max-width: 180px;
+}
+.atk-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--bg-secondary);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+.atk-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  background-color: transparent;
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+}
+.atk-toggle-btn.active {
+  background-color: var(--accent-pink);
+  color: #fff;
+}
+
+/* Chế độ thẻ */
+.atk-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.atk-empty {
+  grid-column: 1 / -1;
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--text-dim);
+  border-radius: var(--radius-lg);
+}
+.atk-ticket-card {
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-subtle);
+  transition: var(--transition);
+}
+.atk-card-row1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.atk-code-chip {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--primary-light);
+  background-color: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+.atk-code-chip-card {
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.atk-code-chip-table {
+  background-color: rgba(99, 102, 241, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+.atk-status-badge {
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+}
+.atk-status-badge-card {
+  padding: 4px 9px;
+  border: 1px solid;
+}
+.atk-status-badge-table {
+  padding: 4px 8px;
+}
+.atk-status-badge.paid {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: var(--accent-emerald);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.atk-status-badge.checked {
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--accent-cyan);
+  border-color: rgba(6, 182, 212, 0.3);
+}
+.atk-status-badge.cancelled {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.atk-card-ev-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 2px;
+  line-height: 1.4;
+}
+.atk-card-ev-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.atk-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  font-size: 12px;
+}
+.atk-info-label {
+  color: var(--text-dim);
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.atk-info-value {
+  font-weight: 600;
+  color: #fff;
+}
+.atk-info-value-main {
+  font-weight: 600;
+  color: var(--text-main);
+}
+.atk-info-sub {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.atk-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+.atk-total-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.atk-total-value {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--accent-pink);
+}
+.atk-checkin-btn {
+  border-radius: var(--radius-md);
+  background-color: rgba(16, 185, 129, 0.2);
+  color: var(--accent-emerald);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.atk-checkin-btn-card {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+.atk-checkin-btn-table {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  font-size: 12px;
+  font-weight: 600;
+}
+.atk-done-chip {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+.atk-done-text {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Chế độ bảng */
+.atk-table-wrap {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+.atk-table-panel {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-subtle);
+  width: 100%;
+  max-width: 100%;
+}
+.atk-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.atk-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+.atk-thead-row {
+  background-color: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-color);
+}
+.atk-th {
+  padding: 16px 20px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.atk-th-w150 {
+  width: 150px;
+}
+.atk-th-w260 {
+  width: 260px;
+}
+.atk-th-w220 {
+  width: 220px;
+}
+.atk-th-w200 {
+  width: 200px;
+}
+.atk-th-w140 {
+  width: 140px;
+}
+.atk-th-w110 {
+  width: 110px;
+}
+.atk-th-right {
+  text-align: right;
+}
+.atk-empty-cell {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.atk-row {
+  border-bottom: 1px solid var(--border-color);
+  transition: var(--transition);
+}
+.atk-row:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+.atk-cell {
+  padding: 16px 20px;
+}
+.atk-cell-right {
+  text-align: right;
+}
+.atk-table-ev-title {
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 2px;
+}
+.atk-table-ev-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.atk-buyer-name {
+  font-weight: 600;
+  color: #fff;
+}
+.atk-buyer-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.atk-type-value {
+  color: var(--text-main);
+  font-weight: 500;
+}
+.atk-price-value {
+  font-weight: 700;
+  color: var(--accent-pink);
+}

@@ -1,0 +1,305 @@
+/* AdminEventsTab.css — CSS riêng của AdminEventsTab.jsx.
+   File tạo ở Phần 3c; toàn bộ style tĩnh chuyển từ inline style ở Phần 4c.
+   Nút chuyển chế độ xem dùng .active; hover hàng bảng bằng :hover. */
+
+.aev-root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.aev-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.aev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background-color: rgba(99, 102, 241, 0.15);
+  color: var(--primary-light);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.aev-title {
+  font-size: clamp(20px, 3.5vw, 28px);
+  font-weight: 800;
+  color: #fff;
+  margin: 0;
+}
+.aev-sub {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+.aev-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+}
+
+/* Thanh lọc */
+.aev-filter-panel {
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.aev-search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.aev-icon-fixed {
+  flex-shrink: 0;
+}
+.aev-search-input {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  width: 100%;
+}
+.aev-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.aev-type-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.aev-type-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.aev-type-select {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: #fff;
+  font-size: 13px;
+}
+.aev-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--bg-secondary);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+.aev-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  background-color: transparent;
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+}
+.aev-toggle-btn.active {
+  background-color: var(--primary);
+  color: #fff;
+}
+
+/* Chế độ thẻ */
+.aev-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.aev-empty {
+  grid-column: 1 / -1;
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--text-dim);
+  border-radius: var(--radius-lg);
+}
+
+/* Chế độ bảng */
+.aev-table-wrap {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+.aev-table-panel {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-subtle);
+  width: 100%;
+  max-width: 100%;
+}
+.aev-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.aev-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+.aev-thead-row {
+  background-color: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-color);
+}
+.aev-th {
+  padding: 16px 20px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.aev-th-w320 {
+  width: 320px;
+}
+.aev-th-w150 {
+  width: 150px;
+}
+.aev-th-w220 {
+  width: 220px;
+}
+.aev-th-w180 {
+  width: 180px;
+}
+.aev-th-w140 {
+  width: 140px;
+}
+.aev-th-right {
+  text-align: right;
+}
+.aev-empty-cell {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.aev-row {
+  border-bottom: 1px solid var(--border-color);
+  transition: var(--transition);
+}
+.aev-row:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+.aev-cell {
+  padding: 16px 20px;
+}
+.aev-cell-nowrap {
+  white-space: nowrap;
+}
+.aev-cell-right {
+  text-align: right;
+}
+.aev-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.aev-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.aev-ev-title {
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.aev-category {
+  font-size: 11px;
+  background-color: rgba(255, 255, 255, 0.08);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+.aev-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.aev-date {
+  font-size: 13px;
+  color: #fff;
+  margin-bottom: 2px;
+}
+.aev-venue {
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aev-price {
+  font-weight: 700;
+  color: var(--accent-pink);
+}
+.aev-price-sub-indigo {
+  font-size: 11px;
+  color: var(--primary-light);
+}
+.aev-price-sub-dim {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.aev-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.aev-action-btn {
+  padding: 8px;
+  border-radius: 6px;
+}
+.aev-action-view {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+}
+.aev-action-edit {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: var(--primary-light);
+}
+.aev-action-delete {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}

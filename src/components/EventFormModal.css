@@ -1,0 +1,291 @@
+/* EventFormModal.css — CSS riêng của EventFormModal.jsx.
+   File tạo ở Phần 3c; toàn bộ style tĩnh chuyển từ inline style ở Phần 4c.
+   Trạng thái kiểm tra dữ liệu dùng .efm-label-error / .efm-input-error. */
+
+.efm-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: clamp(10px, 2.5vw, 24px);
+  box-sizing: border-box;
+}
+.efm-panel {
+  max-width: 720px;
+  width: 100%;
+  max-height: 92dvh;
+  overflow-y: auto;
+  border-radius: var(--radius-xl);
+  padding: clamp(16px, 3.5vw, 32px);
+  border: 1px solid var(--border-glow);
+  box-sizing: border-box;
+}
+.efm-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.efm-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+}
+.efm-close {
+  background: none;
+  color: var(--text-dim);
+  padding: 4px;
+  cursor: pointer;
+}
+.efm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Trường nhập dùng chung */
+.efm-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.efm-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: #fff;
+  font-size: 14px;
+}
+.efm-textarea {
+  resize: vertical;
+}
+.efm-input-outline {
+  outline: none;
+}
+.efm-input-total {
+  border: 1px solid var(--accent-pink);
+  font-weight: 700;
+}
+.efm-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+}
+.efm-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 14px;
+}
+.efm-field-error {
+  font-size: 11px;
+  color: #ef4444;
+  margin-top: 4px;
+  display: block;
+  font-weight: 600;
+}
+.efm-field-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  display: block;
+}
+.efm-field-hint-pink {
+  font-size: 11px;
+  color: var(--accent-pink);
+  margin-top: 4px;
+  display: block;
+}
+.efm-label-error {
+  color: #ef4444;
+}
+.efm-input-error {
+  border-color: #ef4444;
+}
+
+/* Khối cấu hình dùng chung Seated / Zone */
+.efm-seat-box {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background-color: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.efm-zone-box {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background-color: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.efm-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.efm-section-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.efm-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+.efm-seat-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background-color: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+}
+.efm-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.efm-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+}
+.efm-summary-dim {
+  color: var(--text-dim);
+}
+.efm-summary-strong {
+  color: #fff;
+}
+.efm-summary-strong-emerald {
+  color: var(--accent-emerald);
+}
+.efm-summary-price {
+  color: var(--accent-pink);
+  font-weight: 700;
+}
+
+/* Hàng khu vực trong form Zone */
+.efm-add-zone-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(16, 185, 129, 0.2);
+  color: var(--accent-emerald);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.efm-zones-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.efm-zone-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.efm-zone-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+}
+.efm-zone-label-strong {
+  font-weight: 600;
+}
+.efm-zone-input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: #fff;
+  font-size: 13px;
+}
+.efm-zone-input-total {
+  border-color: var(--accent-pink);
+  font-weight: 700;
+}
+.efm-zone-error {
+  font-size: 10px;
+  color: #ef4444;
+  margin-top: 3px;
+  display: block;
+  font-weight: 600;
+}
+.efm-zone-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  display: block;
+}
+.efm-remove-zone-btn {
+  padding: 8px;
+  margin-top: 16px;
+  border-radius: 4px;
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: none;
+  cursor: pointer;
+}
+
+/* Hàng nút cuối form */
+.efm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+.efm-cancel-btn {
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 14px;
+}
+.efm-submit-btn {
+  padding: 10px 24px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Trạng thái lỗi phải thắng các biến thể viền màu ở trên (khai lại cuối file) */
+.efm-label-error {
+  color: #ef4444;
+}
+.efm-input-error {
+  border-color: #ef4444;
+}
