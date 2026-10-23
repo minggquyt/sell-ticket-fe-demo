@@ -1,7 +1,13 @@
 import { formatEventDate, formatEventTime } from '../data/events.js';
+import { getRowLetter } from '../utils/seatLayout.js';
 
-// Cấu hình URL Backend: ưu tiên biến môi trường VITE_API_URL, fallback /api
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace(/\/$/, '');
+// Cấu hình URL Backend: ưu tiên localhost khi chạy môi trường local dev, fallback VITE_API_URL
+export const API_BASE_URL = (
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3000/api'
+    : import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+).replace(/\/$/, '');
 
 /**
  * Chuẩn hóa sự kiện trả về từ Backend để tương thích giao diện FE
@@ -10,7 +16,7 @@ export function normalizeEvent(raw) {
   if (!raw) return null;
 
   const isSeated = raw.event_type === 'SEAT_BASED' || raw.type === 'seated';
-  
+
   const getRawPrice = () => {
     if (raw.min_price !== undefined && raw.min_price !== null && raw.min_price !== '') {
       const p = Number(raw.min_price);
@@ -24,30 +30,56 @@ export function normalizeEvent(raw) {
       const p = Number(raw.seatPrice);
       if (!isNaN(p) && p > 0) return p;
     }
+    if (raw.price !== undefined && raw.price !== null && raw.price !== '') {
+      const p = Number(raw.price);
+      if (!isNaN(p) && p > 0) return p;
+    }
     if (raw.seatConfig?.price !== undefined && raw.seatConfig?.price !== null) {
       const p = Number(raw.seatConfig.price);
       if (!isNaN(p) && p > 0) return p;
     }
-    return 500000;
+    if (Array.isArray(raw.zones) && raw.zones.length > 0) {
+      const valid = raw.zones.map((z) => Number(z.price)).filter((p) => !isNaN(p) && p > 0);
+      if (valid.length > 0) return Math.min(...valid);
+    }
+    if (Array.isArray(raw.seatTiers) && raw.seatTiers.length > 0) {
+      const valid = raw.seatTiers.map((t) => Number(t.price)).filter((p) => !isNaN(p) && p > 0);
+      if (valid.length > 0) return Math.min(...valid);
+    }
+    // Nếu có giá trị nhưng bằng 0
+    if (raw.min_price === 0 || raw.min_price === '0' || raw.minPrice === 0 || raw.price === 0) {
+      return 0;
+    }
+    return 0;
   };
   const minPriceNum = getRawPrice();
-  const maxPriceNum = (raw.max_price !== undefined && raw.max_price !== null && raw.max_price !== '' && Number(raw.max_price) > 0)
-    ? Number(raw.max_price)
-    : ((raw.maxPrice !== undefined && raw.maxPrice !== null && Number(raw.maxPrice) > 0) ? Number(raw.maxPrice) : minPriceNum);
+  const maxPriceNum =
+    raw.max_price !== undefined &&
+    raw.max_price !== null &&
+    raw.max_price !== '' &&
+    Number(raw.max_price) > 0
+      ? Number(raw.max_price)
+      : raw.maxPrice !== undefined && raw.maxPrice !== null && Number(raw.maxPrice) > 0
+        ? Number(raw.maxPrice)
+        : minPriceNum;
+
+  // Layout ghế (H1): KHÔNG còn khôi phục/đoán layout ở đây. Số hàng, số ghế
+  // mỗi hàng chỉ lấy đúng những gì backend trả về (nếu có); giao diện suy
+  // layout thật từ danh sách ghế bằng deriveSeatLayout (utils/seatLayout.js).
+  const finalRowsCount = Number(raw.rowsCount || raw.seatConfig?.rowsCount || 0);
+  const finalSeatsPerRow = Number(raw.seatsPerRow || raw.seatConfig?.seatsPerRow || 0);
+  const finalTotalSeats = Number(raw.totalSeats || raw.seatConfig?.totalSeats || 0);
 
   const singleSeatTier = {
     id: 'standard',
     name: 'Ghế tiêu chuẩn',
     price: minPriceNum,
     color: '#6366f1',
-    rows: ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+    rows: Array.from({ length: finalRowsCount }, (_, i) => getRowLetter(i)),
   };
 
   const isUpcoming = Boolean(
-    raw.status === 'upcoming' ||
-    raw.isUpcoming ||
-    raw.isUpComing ||
-    raw.is_upcoming
+    raw.status === 'upcoming' || raw.isUpcoming || raw.isUpComing || raw.is_upcoming,
   );
 
   return {
@@ -66,26 +98,58 @@ export function normalizeEvent(raw) {
     created_at: raw.created_at || new Date().toISOString(),
     event_type: raw.event_type || (raw.type === 'seated' ? 'SEAT_BASED' : 'ZONE_BASED'),
     type: isSeated ? 'seated' : 'zone',
-    thumbnails: Array.isArray(raw.thumbnails) ? raw.thumbnails : (raw.image ? [raw.image] : []),
+    thumbnails: Array.isArray(raw.thumbnails) ? raw.thumbnails : raw.image ? [raw.image] : [],
     category: raw.category || 'Âm nhạc',
-    min_price: String(raw.min_price || minPriceNum),
-    max_price: String(raw.max_price || maxPriceNum),
+    min_price: String(minPriceNum),
+    max_price: String(maxPriceNum),
     minPrice: minPriceNum,
     maxPrice: maxPriceNum,
-    image: raw.image || (Array.isArray(raw.thumbnails) && raw.thumbnails[0]) || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80',
-    banner: raw.banner || raw.image || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1600&q=80',
+    price: minPriceNum,
+    rowsCount: finalRowsCount,
+    seatsPerRow: finalSeatsPerRow,
+    totalSeats: finalTotalSeats,
+    seatConfig: {
+      rowsCount: finalRowsCount,
+      seatsPerRow: finalSeatsPerRow,
+      totalSeats: finalTotalSeats,
+      price: minPriceNum,
+    },
+    image:
+      raw.image ||
+      (Array.isArray(raw.thumbnails) && raw.thumbnails[0]) ||
+      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80',
+    banner:
+      raw.banner ||
+      raw.image ||
+      'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1600&q=80',
     organizer: raw.organizer || 'Ban tổ chức sự kiện',
-    highlights: Array.isArray(raw.highlights) ? raw.highlights : [],
+    highlights: Array.isArray(raw.highlights)
+      ? raw.highlights.filter((h) => typeof h !== 'string' || !h.startsWith('LAYOUT:'))
+      : [],
     rules: Array.isArray(raw.rules) ? raw.rules : [],
     seatTiers: isSeated ? [singleSeatTier] : [],
-    zones: raw.zones || (isSeated ? [] : [
-        { id: 'vip', name: 'Khu VIP (Sát sân khấu)', price: maxPriceNum || 1500000, color: '#ec4899', available: 50 },
-        { id: 'regular', name: 'Khu Tiêu Chuẩn (GA)', price: minPriceNum || 650000, color: '#06b6d4', available: 200 }
-      ]) // MISS FIELD IN RAW DATA
+    zones:
+      raw.zones ||
+      (isSeated
+        ? []
+        : [
+            {
+              id: 'vip',
+              name: 'Khu VIP (Sát sân khấu)',
+              price: maxPriceNum || 1500000,
+              color: '#ec4899',
+              available: 50,
+            },
+            {
+              id: 'regular',
+              name: 'Khu Tiêu Chuẩn (GA)',
+              price: minPriceNum || 650000,
+              color: '#06b6d4',
+              available: 200,
+            },
+          ]),
   };
 }
-
-export const normalizeSupabaseEvent = normalizeEvent;
 
 /**
  * Lấy danh sách toàn bộ sự kiện từ Backend (Route: GET /api/events)
@@ -99,28 +163,45 @@ export async function fetchEvents() {
     const result = await res.json();
     const data = result.data || result;
     if (!Array.isArray(data)) return [];
-    return data.map(normalizeEvent); // DÒNG NÀY ĐỂ LÀM GÌ ?
+    const events = data.map(normalizeEvent);
+
+    // Tự động kiểm tra nếu có sự kiện có minPrice <= 0 thì đồng bộ từ chi tiết ghế
+    const eventsWithValidPrices = await Promise.all(
+      events.map(async (ev) => {
+        if (ev && (!ev.minPrice || ev.minPrice <= 0)) {
+          try {
+            const seats = await fetchSeatsByEvent(ev.id);
+            if (seats && seats.length > 0) {
+              const prices = seats.map((s) => Number(s.price || 0)).filter((p) => p > 0);
+              if (prices.length > 0) {
+                const actualMin = Math.min(...prices);
+                const actualMax = Math.max(...prices);
+                return {
+                  ...ev,
+                  minPrice: actualMin,
+                  maxPrice: actualMax,
+                  min_price: String(actualMin),
+                  max_price: String(actualMax),
+                  price: actualMin,
+                  seatTiers:
+                    ev.seatTiers && ev.seatTiers.length > 0
+                      ? ev.seatTiers.map((t) => ({ ...t, price: actualMin }))
+                      : ev.seatTiers,
+                };
+              }
+            }
+          } catch {
+            // Bỏ qua lỗi phụ
+          }
+        }
+        return ev;
+      }),
+    );
+
+    return eventsWithValidPrices;
   } catch (err) {
     console.error('❌ Lỗi kết nối Backend /api/events:', err);
     return [];
-  }
-}
-
-/**
- * Lấy thông tin 1 sự kiện theo ID từ Backend (Route: GET /api/events/:eventId)
- */
-export async function fetchEventById(eventId) {
-  try {
-    const res = await fetch(`${API_BASE_URL}/events/${eventId}`);
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}`);
-    }
-    const result = await res.json();
-    const data = result.data || result;
-    return normalizeEvent(data);
-  } catch (err) {
-    console.error(`❌ Lỗi tải sự kiện ${eventId} từ Backend:`, err);
-    return null;
   }
 }
 
@@ -149,7 +230,7 @@ export async function loginUser(email, password) {
   const res = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email, password }),
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
@@ -165,7 +246,7 @@ export async function registerUser(email, password, fullName) {
   const res = await fetch(`${API_BASE_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, fullName })
+    body: JSON.stringify({ email, password, fullName }),
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
@@ -184,16 +265,15 @@ export async function createEventOnBackend(eventData, token) {
   const res = await fetch(`${API_BASE_URL}/admin/events`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(eventData)
+    body: JSON.stringify(eventData),
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
     throw new Error(data.message || 'Không thể tạo sự kiện.');
   }
+  console.log(eventData);
   return normalizeEvent(data.data);
 }
-
-export const createEventOnSupabase = createEventOnBackend;
 
 /**
  * Admin: Cập nhật sự kiện (Route: PUT /api/admin/events/:eventId)
@@ -205,7 +285,7 @@ export async function updateEventOnBackend(eventId, eventData, token) {
   const res = await fetch(`${API_BASE_URL}/admin/events/${eventId}`, {
     method: 'PUT',
     headers,
-    body: JSON.stringify(eventData)
+    body: JSON.stringify(eventData),
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
@@ -213,8 +293,6 @@ export async function updateEventOnBackend(eventId, eventData, token) {
   }
   return normalizeEvent(data.data);
 }
-
-export const updateEventOnSupabase = updateEventOnBackend;
 
 /**
  * Admin: Xóa sự kiện (Route: DELETE /api/admin/events/:eventId)
@@ -225,7 +303,7 @@ export async function deleteEventOnBackend(eventId, token) {
 
   const res = await fetch(`${API_BASE_URL}/admin/events/${eventId}`, {
     method: 'DELETE',
-    headers
+    headers,
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
@@ -233,8 +311,6 @@ export async function deleteEventOnBackend(eventId, token) {
   }
   return true;
 }
-
-export const deleteEventFromSupabase = deleteEventOnBackend;
 
 /**
  * Giữ ghế theo Seat ID (Route: POST /api/seats/reserve)
@@ -246,7 +322,7 @@ export async function holdSeats(seatIds, token) {
   const res = await fetch(`${API_BASE_URL}/seats/reserve`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ seatIds })
+    body: JSON.stringify({ seatIds }),
   });
   return res.json();
 }
@@ -258,7 +334,7 @@ export async function holdZones(eventId, zones, token) {
   const res = await fetch(`${API_BASE_URL}/seats/reserve-zone`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ eventId, zones })
+    body: JSON.stringify({ eventId, zones }),
   });
   return res.json();
 }
@@ -271,13 +347,15 @@ export async function holdZones(eventId, zones, token) {
  */
 export async function releaseSeats(userId, seatIds, token) {
   try {
-    const response = await fetch(`${API_BASE_URL}/seats/release`, { 
+    const authToken = token || null;
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE_URL}/seats/release`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ userId, seatIds })
+      headers,
+      body: JSON.stringify({ userId, seatIds }),
     });
 
     const data = await response.json();
@@ -301,20 +379,7 @@ export async function startCheckout(seatIds, returnUrl, cancelUrl, token) {
   const res = await fetch(`${API_BASE_URL}/seats/start-checkout`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ seatIds, returnUrl, cancelUrl })
-  });
-  return res.json();
-}
-
-/**
- * Lấy lịch sử đơn hàng của User (Route: GET /api/orders/my-history)
- */
-export async function fetchUserOrders(token) {
-  const headers = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE_URL}/orders/my-history`, {
-    headers
+    body: JSON.stringify({ seatIds, returnUrl, cancelUrl }),
   });
   return res.json();
 }
@@ -328,7 +393,7 @@ export async function fetchAdminTickets(token) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const res = await fetch(`${API_BASE_URL}/admin/tickets`, {
-      headers
+      headers,
     });
     if (!res.ok) {
       throw new Error(`HTTP error ${res.status}`);

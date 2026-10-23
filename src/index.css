@@ -1,8 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  
+  --font-family:
+    'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
   /* Color Palette - Cyber & Modern Event Dark Theme */
   --bg-primary: #0a0d14;
   --bg-secondary: #101623;
@@ -37,7 +38,7 @@
   --radius-lg: 18px;
   --radius-xl: 24px;
   --radius-full: 9999px;
-  
+
   --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -89,7 +90,9 @@ button {
   transition: var(--transition);
 }
 
-input, select, textarea {
+input,
+select,
+textarea {
   font-family: inherit;
   outline: none;
   transition: var(--transition);
@@ -143,13 +146,24 @@ a {
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes pulseGlow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .animate-fade-in {
@@ -204,7 +218,9 @@ a {
 /* Responsive & Mobile Optimizations */
 @media (max-width: 768px) {
   /* Prevent iOS zoom on input focus */
-  input, select, textarea {
+  input,
+  select,
+  textarea {
     font-size: 16px !important;
   }
 
@@ -237,4 +253,12 @@ a {
   height: 100%;
   object-fit: cover;
   aspect-ratio: 16 / 9;
+}
+
+/* Vòng xoay tải trang — dùng chung: App (màn hình chờ) + BookingSummary (nút thanh toán).
+   Chuyển từ BookingSummary.css sang đây ở Phần 4a vì App cũng dùng. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

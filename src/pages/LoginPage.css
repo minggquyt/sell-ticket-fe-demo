@@ -1,0 +1,158 @@
+/* LoginPage.css — CSS riêng của LoginPage.jsx (Phần 4b).
+   Toàn bộ style tĩnh chuyển từ inline style; các ô nhập dùng chung
+   .login-field/.login-input. */
+
+.login-page {
+  min-height: calc(100dvh - 72px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(24px, 5vw, 40px) clamp(14px, 3vw, 20px);
+  position: relative;
+}
+
+/* Hai quầng sáng nền */
+.login-glow {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.login-glow-indigo {
+  top: 20%;
+  left: 20%;
+  width: clamp(250px, 40vw, 400px);
+  height: clamp(250px, 40vw, 400px);
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+  filter: blur(60px);
+}
+.login-glow-pink {
+  bottom: 10%;
+  right: 25%;
+  width: clamp(220px, 35vw, 350px);
+  height: clamp(220px, 35vw, 350px);
+  background: radial-gradient(circle, rgba(236, 72, 153, 0.15) 0%, transparent 70%);
+  filter: blur(50px);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 480px;
+  border-radius: var(--radius-xl);
+  padding: clamp(22px, 5vw, 36px);
+  box-shadow: var(--shadow-subtle);
+  position: relative;
+  z-index: 1;
+}
+.login-head {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.login-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  background-color: rgba(99, 102, 241, 0.12);
+  color: var(--primary-light);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+.login-title {
+  font-size: clamp(21px, 4.5vw, 26px);
+  font-weight: 800;
+  margin-bottom: 6px;
+  color: #fff;
+}
+.login-sub {
+  color: var(--text-muted);
+  font-size: clamp(12px, 2.5vw, 14px);
+}
+.login-error {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background-color: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  font-size: 13px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Các nhóm ô nhập */
+.login-group {
+  margin-bottom: 16px;
+}
+.login-group-last {
+  margin-bottom: 20px;
+}
+.login-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+}
+.login-label-inline {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.login-pw-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.login-forgot {
+  font-size: 12px;
+  color: var(--primary-light);
+}
+.login-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+.login-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 14px;
+}
+
+.login-submit {
+  width: 100%;
+  padding: 13px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.login-toggle {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.login-toggle-btn-pink {
+  background: none;
+  color: var(--accent-pink);
+  font-weight: 600;
+  text-decoration: underline;
+}
+.login-toggle-btn-primary {
+  background: none;
+  color: var(--primary-light);
+  font-weight: 600;
+  text-decoration: underline;
+}

@@ -1,0 +1,172 @@
+/* Khối chọn khu vực (Phần 3d) — chuyển nguyên văn từ khối style nội bộ
+   của EventDetailPage: responsive cho thẻ khu vực. */
+.zone-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: clamp(14px, 3vw, 20px);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  transition: var(--transition);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.zone-item-card.selected {
+  border: 1px solid var(--accent-pink);
+}
+.zone-item-info {
+  flex: 1;
+  min-width: 200px;
+}
+.zone-item-action {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+@media (max-width: 560px) {
+  .zone-item-card {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+  .zone-item-info {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+  .zone-item-action {
+    width: 100% !important;
+    justify-content: space-between !important;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* Phần 4b: style tĩnh chuyển từ inline style của ZoneSelector.jsx.
+   Trạng thái dùng class: .zone-root-upcoming (sự kiện sắp diễn ra),
+   .zone-item-card.selected (đã chọn vé), .zone-remaining.sold-out (hết vé),
+   nút stepper .active/.active-accent; màu khu vực qua biến --zone-color. */
+.zone-root {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.zone-root-upcoming {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.zone-heading {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: #fff;
+}
+.zone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.zone-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.zone-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--zone-color);
+  flex-shrink: 0;
+}
+.zone-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+.zone-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.zone-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+}
+.zone-remaining {
+  color: var(--accent-emerald);
+  font-weight: 600;
+}
+.zone-remaining.sold-out {
+  color: #f87171;
+}
+.zone-meta-dim {
+  color: var(--text-dim);
+}
+.zone-price-wrap {
+  text-align: right;
+}
+.zone-price {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--accent-pink);
+}
+.zone-per {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.zone-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: rgba(0, 0, 0, 0.4);
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+.zone-step-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.zone-step-btn.active {
+  background-color: var(--bg-tertiary);
+  color: #fff;
+}
+.zone-step-btn.active-accent {
+  background-color: var(--accent-pink);
+  color: #fff;
+}
+.zone-step-btn:disabled {
+  cursor: not-allowed;
+}
+.zone-qty {
+  min-width: 24px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 16px;
+  color: #fff;
+}
+.zone-footer {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: right;
+}
+.zone-footer-num {
+  color: var(--accent-pink);
+}

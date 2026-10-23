@@ -1,23 +1,99 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import CartModal from './components/CartModal';
 import LoginPage from './pages/LoginPage';
 import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
 import AdminPage from './pages/AdminPage';
-import { 
-  fetchEvents, 
-  fetchSeatsByEvent, 
-  createEventOnBackend, 
+import {
+  fetchEvents,
+  fetchSeatsByEvent,
+  createEventOnBackend,
   updateEventOnBackend,
-  deleteEventOnBackend 
+  deleteEventOnBackend,
 } from './services/eventService';
-import { Heart, Globe, Shield, HelpCircle, Loader2 } from 'lucide-react';
+import { parseSeatCode } from './utils/seatLayout.js';
+import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { ToastProvider } from './components/Toast.jsx';
+import Footer from './components/Footer.jsx';
+import './App.css';
+import { useToast } from './components/toastContext.js';
 
-export default function App() {
-  const [currentRoute, setCurrentRoute] = useState('events'); // 'login' | 'events' | 'detail' | 'admin'
+// Kiểm tra quyền admin ở một chỗ duy nhất (role có thể là 'admin' hoặc 'ADMIN')
+const isAdminUser = (u) => Boolean(u && (u.role === 'admin' || u.role === 'ADMIN'));
+
+// Gộp sự kiện backend vừa lưu với dữ liệu form gửi lên: các trường layout/ghế
+// lấy theo form khi backend không trả về (dùng chung cho Thêm mới và Cập nhật)
+const mergeSavedEvent = (formEvent, savedEvent) => ({
+  ...formEvent,
+  ...savedEvent,
+  rowsCount: formEvent.rowsCount || savedEvent.rowsCount,
+  seatsPerRow: formEvent.seatsPerRow || savedEvent.seatsPerRow,
+  totalSeats: formEvent.totalSeats || savedEvent.totalSeats,
+  seatConfig: {
+    ...(savedEvent.seatConfig || {}),
+    ...(formEvent.seatConfig || {}),
+    rowsCount: formEvent.rowsCount || savedEvent.rowsCount,
+    seatsPerRow: formEvent.seatsPerRow || savedEvent.seatsPerRow,
+  },
+});
+
+// Cuộn lên đầu trang mỗi khi chuyển route (H2)
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [pathname]);
+  return null;
+}
+
+// Trang chi tiết sự kiện: lấy id từ URL bằng useParams (H2).
+// Cách chọn sự kiện giữ nguyên như router tự chế trước đây: tìm theo id,
+// chưa có trong danh sách thì tạm lấy sự kiện đầu tiên, danh sách trống thì báo đang tải/không tìm thấy.
+function EventDetailRoute({
+  eventsList,
+  isLoadingEvents,
+  user,
+  occupiedSeatsByEvent,
+  zoneRemainingByEvent,
+  onPaymentSuccess,
+  onBack,
+  onRequireLogin,
+  onAddToCart,
+  onOpenCart,
+}) {
+  const { id } = useParams();
+  const currentEvent =
+    eventsList.find((e) => e.id === id) || (eventsList.length > 0 ? eventsList[0] : null);
+
+  if (!currentEvent) {
+    return (
+      <div className="app-loading">
+        <div className="app-loading-spinner" />
+        <div className="app-loading-text">
+          {isLoadingEvents ? 'Đang tải thông tin sự kiện...' : 'Không tìm thấy sự kiện.'}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <EventDetailPage
+      event={currentEvent}
+      user={user}
+      occupiedSeats={occupiedSeatsByEvent[currentEvent.id] || new Set()}
+      zoneRemaining={zoneRemainingByEvent[currentEvent.id] || {}}
+      onPaymentSuccess={onPaymentSuccess}
+      onBack={onBack}
+      onRequireLogin={onRequireLogin}
+      onAddToCart={onAddToCart}
+      onOpenCart={onOpenCart}
+    />
+  );
+}
+
+function AppShell() {
   const [eventsList, setEventsList] = useState([]);
-  const [selectedEventId, setSelectedEventId] = useState(null);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [user, setUser] = useState(null);
   const [cart, setCart] = useState([]); // Giỏ hàng: mảng các vé đã thanh toán thành công
@@ -29,7 +105,29 @@ export default function App() {
   // Quản lý số vé còn lại theo zone của từng sự kiện
   const [zoneRemainingByEvent, setZoneRemainingByEvent] = useState({});
 
-  const isAdminLoggedIn = Boolean(user && (user.role === 'admin' || user.role === 'ADMIN'));
+  const isAdminLoggedIn = isAdminUser(user);
+
+  // --- React Router (H2): route lấy từ URL thật, không còn state tự chế ---
+  const navigate = useNavigate();
+  const location = useLocation();
+  const urlEventId = location.pathname.match(/^\/events\/([^/]+)/)?.[1] || null;
+  const currentRoute =
+    location.pathname === '/login'
+      ? 'login'
+      : location.pathname === '/admin'
+        ? 'admin'
+        : urlEventId
+          ? 'detail'
+          : 'events';
+
+  // Nhớ sự kiện đang xem dở để đăng nhập xong quay lại đúng trang chi tiết (như router tự chế trước đây).
+  // Cập nhật ngay trong lúc render theo mẫu React khuyến nghị, không dùng effect.
+  const [lastViewedEventId, setLastViewedEventId] = useState(null);
+  if (urlEventId && urlEventId !== lastViewedEventId) {
+    setLastViewedEventId(urlEventId);
+  }
+
+  const toast = useToast();
 
   // Khôi phục phiên đăng nhập từ localStorage
   useEffect(() => {
@@ -38,62 +136,11 @@ export default function App() {
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
         setUser(parsed);
-        if (parsed && (parsed.role === 'admin' || parsed.role === 'ADMIN')) {
-          setCurrentRoute('admin');
-          if (window.location.pathname !== '/admin') {
-            window.history.replaceState({}, '', '/admin');
-          }
-        }
       }
     } catch (e) {
       console.warn('Lỗi đọc user từ localStorage:', e);
     }
   }, []);
-
-  // Nếu user là Admin, luôn khóa chặt ở trang /admin
-  useEffect(() => {
-    if (isAdminLoggedIn) {
-      if (currentRoute !== 'admin') {
-        setCurrentRoute('admin');
-      }
-      if (window.location.pathname !== '/admin') {
-        window.history.replaceState({}, '', '/admin');
-      }
-    }
-  }, [isAdminLoggedIn, currentRoute]);
-
-  // Đồng bộ route theo URL trình duyệt (chuẩn route BE quy định)
-  useEffect(() => {
-    const handleUrlChange = () => {
-      const path = window.location.pathname;
-      if (user && (user.role === 'admin' || user.role === 'ADMIN')) {
-        setCurrentRoute('admin');
-        if (path !== '/admin') {
-          window.history.replaceState({}, '', '/admin');
-        }
-        return;
-      }
-      if (path === '/login') {
-        setCurrentRoute('login');
-      } else if (path === '/admin') {
-        setCurrentRoute('admin');
-      } else if (path.startsWith('/events/')) {
-        const id = path.replace('/events/', '').split('/')[0];
-        if (id) {
-          setSelectedEventId(id);
-          setCurrentRoute('detail');
-        } else {
-          setCurrentRoute('events');
-        }
-      } else {
-        setCurrentRoute('events');
-      }
-    };
-
-    handleUrlChange();
-    window.addEventListener('popstate', handleUrlChange);
-    return () => window.removeEventListener('popstate', handleUrlChange);
-  }, [user]);
 
   // Tải danh sách sự kiện từ Backend
   const loadEvents = useCallback(async (isSilent = false) => {
@@ -103,12 +150,14 @@ export default function App() {
       if (data && data.length > 0) {
         setEventsList(data);
         const map = {};
-        data.forEach(ev => {
+        data.forEach((ev) => {
           if (ev.zones) {
-            map[ev.id] = Object.fromEntries(ev.zones.map(z => [z.id, z.available || z.remaining || 50]));
+            map[ev.id] = Object.fromEntries(
+              ev.zones.map((z) => [z.id, z.available || z.remaining || 50]),
+            );
           }
         });
-        setZoneRemainingByEvent(prev => ({ ...map, ...prev }));
+        setZoneRemainingByEvent((prev) => ({ ...map, ...prev }));
       } else {
         setEventsList([]);
       }
@@ -128,32 +177,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loadEvents]);
 
-  // Điều hướng chuyển trang và cập nhật URL trình duyệt
+  // Điều hướng chuyển trang (H2: giữ nguyên chữ ký cũ, ruột dùng React Router)
   const navigateTo = (route, eventId = null) => {
     if (isAdminLoggedIn) {
-      setCurrentRoute('admin');
-      if (window.location.pathname !== '/admin') {
-        window.history.pushState({}, '', '/admin');
-      }
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      navigate('/admin');
       return;
     }
-
-    setCurrentRoute(route);
-    let targetPath = '/events';
     if (route === 'login') {
-      targetPath = '/login';
+      navigate('/login');
     } else if (route === 'admin') {
-      targetPath = '/admin';
+      navigate('/admin');
     } else if (route === 'detail' && eventId) {
-      setSelectedEventId(eventId);
-      targetPath = `/events/${eventId}`;
-    } else if (route === 'events') {
-      targetPath = '/events';
-    }
-
-    if (window.location.pathname !== targetPath) {
-      window.history.pushState({}, '', targetPath);
+      navigate(`/events/${eventId}`);
+    } else {
+      navigate('/events');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -161,13 +198,10 @@ export default function App() {
   const handleLoginSuccess = (userData) => {
     setUser(userData);
     localStorage.setItem('sellticket_user', JSON.stringify(userData));
-    if (userData && (userData.role === 'admin' || userData.role === 'ADMIN')) {
-      setCurrentRoute('admin');
-      if (window.location.pathname !== '/admin') {
-        window.history.pushState({}, '', '/admin');
-      }
-    } else if (selectedEventId) {
-      navigateTo('detail', selectedEventId);
+    if (isAdminUser(userData)) {
+      navigate('/admin');
+    } else if (lastViewedEventId) {
+      navigateTo('detail', lastViewedEventId);
     } else {
       navigateTo('events');
     }
@@ -177,26 +211,25 @@ export default function App() {
     setUser(null);
     localStorage.removeItem('sellticket_user');
     setCart([]);
-    setCurrentRoute('events');
-    window.history.pushState({}, '', '/events');
+    navigate('/events');
   };
 
   // Thêm vé vào giỏ hàng sau khi thanh toán thành công
   const handleAddToCart = (ticketInfo) => {
-    setCart(prev => [...prev, ticketInfo]);
+    setCart((prev) => [...prev, ticketInfo]);
   };
 
   // Xử lý cập nhật ghế / vé khi thanh toán thành công
   const handlePaymentSuccess = (eventId, eventType, selectedSeats, zoneQuantities) => {
     const isSeated = eventType === 'SEAT_BASED' || eventType === 'seated';
     if (isSeated) {
-      setOccupiedSeatsByEvent(prev => {
+      setOccupiedSeatsByEvent((prev) => {
         const currentSet = prev[eventId] ? new Set(prev[eventId]) : new Set();
-        selectedSeats.forEach(s => currentSet.add(s.code));
+        selectedSeats.forEach((s) => currentSet.add(s.code));
         return { ...prev, [eventId]: currentSet };
       });
     } else {
-      setZoneRemainingByEvent(prev => {
+      setZoneRemainingByEvent((prev) => {
         const currentZones = prev[eventId] ? { ...prev[eventId] } : {};
         Object.entries(zoneQuantities).forEach(([zId, qty]) => {
           if (qty > 0) {
@@ -210,76 +243,103 @@ export default function App() {
 
   // Đồng bộ trạng thái ghế đã bán từ Backend khi người dùng xem sự kiện
   useEffect(() => {
-    if (!selectedEventId) return;
-    fetchSeatsByEvent(selectedEventId).then(seats => {
-      if (seats && seats.length > 0) {
-        const soldOrReserved = seats
-          .filter(s => s.status === 'SOLD' || s.status === 'RESERVED')
-          .map(s => {
-            const num = s.seat_number;
-            if (/^[A-G]\d+$/.test(num)) {
-              return `${num.charAt(0)}-${num.slice(1)}`;
-            }
-            return num;
-          });
-        if (soldOrReserved.length > 0) {
-          setOccupiedSeatsByEvent(prev => ({
+    if (!urlEventId) return;
+    fetchSeatsByEvent(urlEventId)
+      .then((seats) => {
+        if (seats && seats.length > 0) {
+          const now = new Date();
+          const soldOrReserved = seats
+            .filter((s) => {
+              if (s.status === 'SOLD') return true;
+              // Chỉ coi là đã đặt nếu là ghế đang giữ của NGƯỜI KHÁC và còn trong thời gian giữ:
+              if (
+                (s.status === 'RESERVED' || s.status === 'PAYMENT_PROCESSING') &&
+                s.reserved_until
+              ) {
+                const notExpired = new Date(s.reserved_until) > now;
+                const isOtherUser = !user?.id || (s.reserved_by && s.reserved_by !== user.id);
+                return notExpired && isOtherUser;
+              }
+              return false;
+            })
+            .map((s) => {
+              const parsed = parseSeatCode(s.seat_number);
+              return parsed ? `${parsed.row}-${parsed.number}` : s.seat_number;
+            });
+
+          setOccupiedSeatsByEvent((prev) => ({
             ...prev,
-            [selectedEventId]: new Set([...(prev[selectedEventId] || []), ...soldOrReserved])
+            [urlEventId]: new Set(soldOrReserved),
           }));
         }
-      }
-    }).catch(err => console.warn('Không thể đồng bộ ghế từ Backend:', err));
-  }, [selectedEventId]);
+      })
+      .catch((err) => console.warn('Không thể đồng bộ ghế từ Backend:', err));
+  }, [urlEventId, user?.id]);
 
   // --- CRUD CHO ADMIN ---
   const handleAddEvent = async (newEvent) => {
     try {
       const created = await createEventOnBackend(newEvent, user?.token);
-      setEventsList(prev => [created, ...prev]);
-      alert('Thêm sự kiện mới thành công lên hệ thống Backend!');
+      const merged = mergeSavedEvent(newEvent, created);
+      setEventsList((prev) => [merged, ...prev]);
+      toast.success('Thêm sự kiện mới thành công lên hệ thống Backend!');
     } catch (err) {
       console.error(err);
-      setEventsList(prev => [newEvent, ...prev]);
-      alert('Đã thêm sự kiện: ' + err.message);
+      setEventsList((prev) => [newEvent, ...prev]);
+      toast.error('Đã thêm sự kiện: ' + err.message);
     }
   };
 
   const handleUpdateEvent = async (updatedEvent) => {
     try {
       const saved = await updateEventOnBackend(updatedEvent.id, updatedEvent, user?.token);
-      setEventsList(prev => prev.map(e => e.id === updatedEvent.id ? saved : e));
-      alert('Cập nhật thông tin sự kiện và giá vé thành công lên hệ thống!');
+      const merged = mergeSavedEvent(updatedEvent, saved);
+      setEventsList((prev) => prev.map((e) => (e.id === updatedEvent.id ? merged : e)));
+      toast.success('Cập nhật thông tin sự kiện và giá vé thành công lên hệ thống!');
     } catch (err) {
       console.error(err);
-      setEventsList(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
-      alert('Đã cập nhật sự kiện: ' + err.message);
+      setEventsList((prev) => prev.map((e) => (e.id === updatedEvent.id ? updatedEvent : e)));
+      toast.error('Đã cập nhật sự kiện: ' + err.message);
     }
   };
 
   const handleDeleteEvent = async (id) => {
     try {
       await deleteEventOnBackend(id, user?.token);
-      setEventsList(prev => prev.filter(e => e.id !== id));
-      alert('Đã xóa sự kiện thành công khỏi hệ thống Backend!');
+      setEventsList((prev) => prev.filter((e) => e.id !== id));
+      toast.success('Đã xóa sự kiện thành công khỏi hệ thống Backend!');
     } catch (err) {
       console.error(err);
-      setEventsList(prev => prev.filter(e => e.id !== id));
-      alert('Đã xóa sự kiện: ' + err.message);
+      setEventsList((prev) => prev.filter((e) => e.id !== id));
+      toast.error('Đã xóa sự kiện: ' + err.message);
     }
   };
-  const currentEvent = eventsList.find(e => e.id === selectedEventId) || (eventsList.length > 0 ? eventsList[0] : null);
+  const eventsElement = (
+    <EventsPage
+      events={eventsList}
+      isLoading={isLoadingEvents}
+      onSelectEvent={(event) => navigateTo('detail', event.id)}
+    />
+  );
+
+  const accessDeniedElement = (
+    <div className="access-denied">
+      <h3 className="access-denied-title">Truy cập bị từ chối</h3>
+      <p className="access-denied-text">
+        Bạn cần đăng nhập bằng tài khoản Quản trị viên (Admin) để xem trang này.
+      </p>
+      <button onClick={() => navigateTo('login')} className="glow-btn-primary access-denied-btn">
+        Đến trang Đăng nhập
+      </button>
+    </div>
+  );
 
   // NẾU TÀI KHOẢN ADMIN ĐÃ ĐĂNG NHẬP: CHỈ HIỂN THỊ TRANG QUẢN TRỊ DUY NHẤT
   if (isAdminLoggedIn) {
     return (
-// <<<<<<< HEAD
-      <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
-        <main style={{ flex: 1, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
-{/* =======
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
-        <main style={{ flex: 1 }}>
->>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
+      <div className="app-shell">
+        {location.pathname !== '/admin' && <Navigate to="/admin" replace />}
+        <main className="app-main">
           <AdminPage
             events={eventsList}
             onAddEvent={handleAddEvent}
@@ -297,11 +357,9 @@ export default function App() {
 
   // GIAO DIỆN DÀNH CHO KHÁCH HÀNG / NGƯỜI DÙNG THƯỜNG
   return (
-// <<<<<<< HEAD
-    <div style={{ minHeight: '100vh', width: '100%', maxWidth: '100vw', overflowX: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
-{/* =======
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
->>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
+    <div className="app-shell">
+      <ScrollToTop />
+
       {/* Navigation Bar */}
       <Navbar
         currentRoute={currentRoute}
@@ -312,172 +370,48 @@ export default function App() {
         onOpenCart={() => setIsCartOpen(true)}
       />
 
-      {/* Main View Router */}
-{/* <<<<<<< HEAD */}
-      <main style={{ flex: 1, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
-{/* =======
-      <main style={{ flex: 1 }}>
->>>>>>> 11afa35b8e15bc7fcce92ffd95484b19d36e468c */}
-        {currentRoute === 'login' && (
-          <LoginPage
-            onLoginSuccess={handleLoginSuccess}
-            onNavigate={(route) => navigateTo(route)}
+      {/* Main View Router — React Router (H2) */}
+      <main className="app-main">
+        <Routes>
+          <Route path="/" element={eventsElement} />
+          <Route path="/events" element={eventsElement} />
+          <Route
+            path="/events/:id"
+            element={
+              <EventDetailRoute
+                eventsList={eventsList}
+                isLoadingEvents={isLoadingEvents}
+                user={user}
+                occupiedSeatsByEvent={occupiedSeatsByEvent}
+                zoneRemainingByEvent={zoneRemainingByEvent}
+                onPaymentSuccess={handlePaymentSuccess}
+                onBack={() => navigateTo('events')}
+                onRequireLogin={() => navigateTo('login')}
+                onAddToCart={handleAddToCart}
+                onOpenCart={() => setIsCartOpen(true)}
+              />
+            }
           />
-        )}
+          <Route path="/login" element={<LoginPage onLoginSuccess={handleLoginSuccess} />} />
+          <Route path="/admin" element={accessDeniedElement} />
+          <Route path="*" element={<Navigate to="/events" replace />} />
+        </Routes>
+      </main>
 
-        {currentRoute === 'events' && (
-          <EventsPage
-            events={eventsList}
-            isLoading={isLoadingEvents}
-            onSelectEvent={(event) => navigateTo('detail', event.id)}
-          />
-        )}
+      {/* Global Cart Modal - Làm mờ nền toàn màn hình, đặt ở root app */}
+      <CartModal isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} cart={cart} />
 
-        {currentRoute === 'detail' && (
-          currentEvent ? (
-            <EventDetailPage
-              event={currentEvent}
-              user={user}
-              occupiedSeats={occupiedSeatsByEvent[currentEvent.id] || new Set()}
-              zoneRemaining={zoneRemainingByEvent[currentEvent.id] || {}}
-              onPaymentSuccess={handlePaymentSuccess}
-              onBack={() => navigateTo('events')}
-              onRequireLogin={() => navigateTo('login')}
-              onAddToCart={handleAddToCart}
-              onOpenCart={() => setIsCartOpen(true)}
-            />
-          ) : (
-            <div style={{ textAlign: 'center', padding: '120px 24px' }}>
-              <div style={{
-                display: 'inline-block',
-                animation: 'spin 1s linear infinite',
-                border: '3px solid rgba(255,255,255,0.1)',
-                borderTopColor: 'var(--primary-light)',
-                borderRadius: '50%',
-                width: '36px',
-                height: '36px',
-                marginBottom: '16px'
-              }} />
-              <div style={{ color: 'var(--text-muted)', fontSize: '15px' }}>
-                {isLoadingEvents ? 'Đang tải thông tin sự kiện...' : 'Không tìm thấy sự kiện.'}
-              </div>
-            </div>
-          )
-        )}
+      {/* Global Footer (Chỉ hiển thị ngoài trang Admin) — tách thành component ở Phần 3a */}
+      {!(currentRoute === 'admin' && isAdminLoggedIn) && <Footer onNavigate={navigateTo} />}
+    </div>
+  );
+}
 
-        {currentRoute === 'admin' && (
-          <div style={{
-            padding: '60px 24px',
-            textAlign: 'center',
-            maxWidth: '500px',
-            margin: '100px auto',
-            borderRadius: 'var(--radius-xl)',
-            backgroundColor: 'rgba(239, 68, 68, 0.08)',
-            border: '1px solid rgba(239, 68, 68, 0.25)'
-          }}>
-            <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#f87171', marginBottom: '8px' }}>
-              Truy cập bị từ chối
-            </h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '20px' }}>
-              Bạn cần đăng nhập bằng tài khoản Quản trị viên (Admin) để xem trang này.
-            </p>
-            <button
-              onClick={() => navigateTo('login')}
-              className="glow-btn-primary"
-              style={{ padding: '10px 24px' }}
-            >
-              Đến trang Đăng nhập
-            </button>
-          </div>
-        )}
-        </main>
-
-        {/* Global Cart Modal - Làm mờ nền toàn màn hình, đặt ở root app */}
-        <CartModal
-          isOpen={isCartOpen}
-          onClose={() => setIsCartOpen(false)}
-          cart={cart}
-        />
-
-        {/* Global Footer (Chỉ hiển thị ngoài trang Admin) */}
-        {!(currentRoute === 'admin' && user && user.role === 'admin') && (
-          <footer style={{
-            borderTop: '1px solid var(--border-color)',
-            backgroundColor: 'rgba(10, 13, 20, 0.95)',
-            padding: 'clamp(32px, 5vw, 48px) clamp(16px, 3.5vw, 24px) 24px',
-            marginTop: 'auto'
-          }}>
-            <div style={{
-              maxWidth: '1280px',
-              margin: '0 auto',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
-              gap: 'clamp(20px, 3.5vw, 32px)',
-              marginBottom: '32px'
-            }}>
-              <div>
-                <h4 style={{ fontSize: '18px', fontWeight: 800, color: '#fff', marginBottom: '14px' }}>
-                  Ticket<span style={{ color: 'var(--accent-pink)' }}>Verse</span>
-                </h4>
-                <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6 }}>
-                  Nền tảng phân phối vé sự kiện và nhạc hội trực tuyến hàng đầu. Đảm bảo 100% vé chính hãng và trải nghiệm đặt vé mượt mà nhất.
-                </p>
-              </div>
-
-              <div>
-                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Khám phá</h5>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Nhạc hội & Concert</li>
-                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Lễ hội âm nhạc EDM</li>
-                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Fan Meeting</li>
-                  <li style={{ cursor: 'pointer' }} onClick={() => navigateTo('events')}>Khu vực & Sơ đồ ghế</li>
-                </ul>
-              </div>
-
-              <div>
-                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Dành cho ban tổ chức</h5>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  <li>Hợp tác phân phối vé</li>
-                  <li>Giải pháp Check-in QR bảo mật</li>
-                  <li>Quản lý phân khu thời gian thực</li>
-                  <li>Báo cáo doanh thu & đối soát</li>
-                </ul>
-              </div>
-
-              <div>
-                <h5 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>Hỗ trợ khách hàng</h5>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  <div>Hotline: 1900 6868 (8:00 - 22:00)</div>
-                  <div>Email: support@ticketverse.vn</div>
-                  <div style={{ marginTop: '8px', color: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Shield size={14} /> Bảo mật giao dịch 100%
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{
-              maxWidth: '1280px',
-              margin: '0 auto',
-              paddingTop: '20px',
-              borderTop: '1px solid var(--border-color)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: '12px',
-              fontSize: '12px',
-              color: 'var(--text-dim)'
-            }}>
-              <div>© 2026 TicketVerse Inc. All rights reserved.</div>
-              <div style={{ display: 'flex', gap: '16px' }}>
-                <span>Điều khoản sử dụng</span>
-                <span>Chính sách bảo mật</span>
-                <span>Quy định hoàn hủy vé</span>
-              </div>
-            </div>
-          </footer>
-        )}
-      </div>
+// Gốc app: bọc ToastProvider để mọi trang dùng được toast (H3)
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppShell />
+    </ToastProvider>
   );
 }
