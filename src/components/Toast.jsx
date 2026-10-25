@@ -3,10 +3,6 @@ import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { ToastContext } from './toastContext.js';
 import './Toast.css';
 
-// Hệ thống toast (H3): thay cho hộp thoại alert của trình duyệt.
-// Dùng: bọc <ToastProvider> ở gốc app, các component con gọi useToast()
-// rồi toast.success(...) / toast.error(...) / toast.warning(...) / toast.info(...)
-
 const TOAST_ICONS = {
   success: CheckCircle2,
   error: XCircle,

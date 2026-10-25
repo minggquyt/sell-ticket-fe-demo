@@ -108,6 +108,7 @@ export default function AdminPage({
         price: 500000,
         color: '#6366f1',
         rows: ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+        // HERE 
       },
     ],
     zones: [

@@ -3,9 +3,6 @@ import { MAX_TICKETS_PER_ORDER } from '../data/events';
 import { formatVND } from '../utils/format.js';
 import './ZoneSelector.css';
 
-// Khối chọn khu vực cho sự kiện Zone-based (tách từ EventDetailPage ở Phần 3d):
-// danh sách khu vực + nút tăng/giảm số vé từng khu vực.
-// CSS responsive của thẻ khu vực (.zone-item-*) nằm ở ZoneSelector.css.
 export default function ZoneSelector({
   backendZones,
   zoneQuantities,

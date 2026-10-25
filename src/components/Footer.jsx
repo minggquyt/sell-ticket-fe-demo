@@ -1,7 +1,6 @@
 import { Shield } from 'lucide-react';
 import './Footer.css';
 
-// Chân trang toàn cục (tách từ App.jsx ở Phần 3a; toàn bộ style tĩnh nằm ở Footer.css)
 export default function Footer({ onNavigate }) {
   return (
     <footer className="app-footer">

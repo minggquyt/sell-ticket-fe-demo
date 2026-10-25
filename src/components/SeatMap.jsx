@@ -1,12 +1,6 @@
 import { formatVND } from '../utils/format.js';
 import './SeatMap.css';
 
-// Sơ đồ ghế dùng chung (Phần 3b) — tách từ khối chọn ghế của EventDetailPage.
-// Nhận ghế đã nhóm theo hàng (groupedSeats) + danh sách ghế gốc (seats) để tính
-// dòng tổng kết; trạng thái từng ghế (trống / đã bán / đang chọn) thể hiện bằng
-// class trạng thái, màu của hạng ghế truyền qua biến CSS --tier-color.
-// Đây là bản sơ đồ ghế duy nhất của app: nơi nào cần hiện sơ đồ ghế
-// (trang chi tiết, xem trước trong admin sau này) đều dùng component này.
 export default function SeatMap({
   groupedSeats,
   seats,

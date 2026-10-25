@@ -4,8 +4,6 @@ import { formatVND } from '../utils/format.js';
 import { getRowLetter } from '../utils/seatLayout.js';
 import './EventFormModal.css';
 
-// Form thêm / sửa sự kiện dạng modal (tách từ AdminPage ở Phần 3c).
-// Mọi state và hàm xử lý form vẫn do AdminPage giữ và truyền xuống qua props.
 export default function EventFormModal({
   editingEvent,
   formData,

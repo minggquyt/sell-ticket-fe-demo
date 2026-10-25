@@ -11,11 +11,6 @@ import {
 import { formatVND } from '../utils/format.js';
 import './EventCard.css';
 
-// Thẻ sự kiện dùng chung (Phần 3a) — 2 biến thể theo nơi dùng:
-// - 'public': thẻ ở trang danh sách phía khán giả, bấm vào thẻ để mở chi tiết,
-//   hiệu ứng hover nhấc thẻ viết bằng CSS (trước đây là onMouseOver/onMouseOut).
-// - 'admin': thẻ ở lưới sự kiện trang quản trị, kèm 3 nút Xem / Sửa / Xóa.
-// Toàn bộ style tĩnh nằm ở EventCard.css; các class badge-* dùng chung ở index.css.
 export default function EventCard({
   event,
   variant = 'public',

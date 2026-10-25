@@ -1,8 +1,3 @@
-/**
- * Danh mục và cấu hình sự kiện
- * Dữ liệu sự kiện hiện được đồng bộ trực tiếp từ Backend qua src/services/eventService.js
- */
-
 export const CATEGORIES = ['Tất cả', 'Âm nhạc', 'Lễ hội', 'Hội thảo', 'Hài kịch', 'Thể thao'];
 export const CITIES = ['Tất cả địa điểm', 'Hà Nội', 'TP.HCM'];
 
@@ -13,7 +8,7 @@ export const MAX_TICKETS_PER_ORDER = 5;
 export const isSeatedEvent = (event) => {
   if (!event) return false;
   return event.event_type === 'SEAT_BASED' || event.type === 'seated';
-};
+};q
 
 export const formatEventDate = (event) => {
   if (!event) return '';
