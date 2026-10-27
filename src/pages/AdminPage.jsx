@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react';
-import { fetchAdminTickets, fetchSeatsByEvent } from '../services/eventService';
+import {
+  fetchAdminTickets,
+  fetchAdminRefunds,
+  confirmOrderRefundOnBackend,
+  fetchSeatsByEvent,
+} from '../services/eventService';
 import { useToast } from '../components/toastContext.js';
 import AdminSidebar from '../components/AdminSidebar.jsx';
 import AdminEventsTab from '../components/AdminEventsTab.jsx';
 import AdminTicketsTab from '../components/AdminTicketsTab.jsx';
+import AdminRefundsTab from '../components/AdminRefundsTab.jsx';
 import EventFormModal from '../components/EventFormModal.jsx';
 import './AdminPage.css';
 import { AlertCircle, Ticket, Menu } from 'lucide-react';
@@ -28,7 +34,7 @@ export default function AdminPage({
   onLogout,
 }) {
   const toast = useToast();
-  // Tab điều hướng bên aside menu: 'events' (Quản lý sự kiện) | 'tickets' (Quản lý vé)
+  // Tab điều hướng bên aside menu: 'events' | 'tickets' | 'refunds'
   const [activeTab, setActiveTab] = useState('events');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   // Chế độ xem: 'auto' (Thẻ trên di động, Bảng trên máy tính) | 'cards' | 'table'
@@ -48,6 +54,10 @@ export default function AdminPage({
   const [ticketsList, setTicketsList] = useState([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
 
+  // --- QUẢN LÝ HOÀN TIỀN (REFUND) STATES ---
+  const [refundsList, setRefundsList] = useState([]);
+  const [isLoadingRefunds, setIsLoadingRefunds] = useState(false);
+
   const loadTickets = async () => {
     setIsLoadingTickets(true);
     try {
@@ -62,9 +72,40 @@ export default function AdminPage({
     }
   };
 
+  const loadRefunds = async () => {
+    setIsLoadingRefunds(true);
+    try {
+      const refunds = await fetchAdminRefunds(user?.token);
+      if (refunds && Array.isArray(refunds)) {
+        setRefundsList(refunds);
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách hoàn tiền quản trị:', err);
+    } finally {
+      setIsLoadingRefunds(false);
+    }
+  };
+
+  const handleConfirmRefund = async (orderCode) => {
+    try {
+      await confirmOrderRefundOnBackend(orderCode, user?.token);
+      setRefundsList((prev) =>
+        prev.map((o) =>
+          String(o.orderCode) === String(orderCode) ? { ...o, status: 'REFUNDED' } : o,
+        ),
+      );
+      toast.success(`Đã xác nhận hoàn tiền thành công cho đơn #${orderCode}!`);
+    } catch (err) {
+      toast.error(err.message || 'Không thể xác nhận hoàn tiền cho đơn này.');
+    }
+  };
+
   useEffect(() => {
     loadTickets();
+    loadRefunds();
   }, [user]);
+
+  const pendingRefundsCount = refundsList.filter((o) => o.status === 'REFUND_PENDING').length;
 
   // Form State Sự kiện
   const initialForm = {
@@ -108,7 +149,6 @@ export default function AdminPage({
         price: 500000,
         color: '#6366f1',
         rows: ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
-        // HERE 
       },
     ],
     zones: [
@@ -193,8 +233,6 @@ export default function AdminPage({
     const evVenue = getEventVenue(ev);
     const evDate = formatEventDate(ev) || ev.date || '';
 
-    // Layout ghế (H1): chỉ lấy tạm số backend trả về theo sự kiện (nếu có);
-    // danh sách ghế thật tải về ngay sau đó sẽ ghi đè bằng layout suy từ ghế.
     const rowsCount = ev.rowsCount || ev.seatConfig?.rowsCount || '';
     const seatsPerRow = ev.seatsPerRow || ev.seatConfig?.seatsPerRow || '';
     const totalSeats = ev.totalSeats || ev.seatConfig?.totalSeats || '';
@@ -281,7 +319,6 @@ export default function AdminPage({
               }));
             }
           } else {
-            // H1: suy layout (số hàng, ghế mỗi hàng, tổng ghế) từ ghế thật của backend
             const layout = deriveSeatLayout(seats);
             const actualSeatPrice = Number(seats[0]?.price) > 0 ? Number(seats[0].price) : 0;
             setFormData((prev) => ({
@@ -372,21 +409,20 @@ export default function AdminPage({
           ? 0
           : Number(formData.seatsPerRow);
 
-      if (rowsCount < 2) {
+      if (rowsCount < 1) {
         toast.warning(
-          `Số hàng ghế không hợp lệ! Vui lòng nhập tối thiểu 2 hàng ghế (hiện tại: ${rowsCount}).`,
+          `Số hàng ghế không hợp lệ! Vui lòng nhập tối thiểu 1 hàng ghế (hiện tại: ${rowsCount}).`,
         );
         return;
       }
 
-      if (seatsPerRow < 3) {
+      if (seatsPerRow < 1) {
         toast.warning(
-          `Số ghế mỗi hàng không hợp lệ! Vui lòng nhập tối thiểu 3 ghế cho mỗi hàng (hiện tại: ${seatsPerRow}).`,
+          `Số ghế mỗi hàng không hợp lệ! Vui lòng nhập tối thiểu 1 ghế cho mỗi hàng (hiện tại: ${seatsPerRow}).`,
         );
         return;
       }
 
-      // Seated-based: Cấu hình số ghế theo hàng x cột
       const price = Number(
         formData.seatPrice !== '' && formData.seatPrice != null
           ? formData.seatPrice
@@ -429,8 +465,6 @@ export default function AdminPage({
         seatConfig,
         seatTiers: [singleTier],
         thumbnails: formData.thumbnails || [formData.image],
-        // Không còn nhét chuỗi LAYOUT: vào highlights (H1); bộ lọc giữ lại để
-        // dọn các chuỗi LAYOUT: cũ còn sót trong dữ liệu khi lưu lại sự kiện.
         highlights: (
           formData.highlights || [
             'Sơ đồ ghế đồng giá cho toàn bộ vị trí',
@@ -575,6 +609,15 @@ export default function AdminPage({
           >
             Vé ({ticketsList.length})
           </button>
+          <button
+            onClick={() => {
+              setActiveTab('refunds');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`admin-pill${activeTab === 'refunds' ? ' active-pink' : ''}`}
+          >
+            Hoàn tiền ({pendingRefundsCount})
+          </button>
         </div>
       </header>
 
@@ -588,12 +631,13 @@ export default function AdminPage({
           />
         )}
 
-        {/* ================= ASIDE BÊN TRÁI (tách ở Phần 3c) ================= */}
+        {/* ================= ASIDE BÊN TRÁI ================= */}
         <AdminSidebar
           user={user}
           activeTab={activeTab}
           eventsCount={events.length}
           ticketsCount={ticketsList.length}
+          refundsCount={pendingRefundsCount}
           isMobileSidebarOpen={isMobileSidebarOpen}
           onSelectTab={(tab) => {
             setActiveTab(tab);
@@ -606,7 +650,7 @@ export default function AdminPage({
 
         {/* ================= NỘI DUNG CHÍNH (MAIN CONTENT) ================= */}
         <main className="admin-main-content">
-          {/* ================= TAB 1: QUẢN LÝ SỰ KIỆN (tách ở Phần 3c) ================= */}
+          {/* ================= TAB 1: QUẢN LÝ SỰ KIỆN ================= */}
           {activeTab === 'events' && (
             <AdminEventsTab
               events={events}
@@ -624,7 +668,7 @@ export default function AdminPage({
             />
           )}
 
-          {/* ================= TAB 2: QUẢN LÝ VÉ (tách ở Phần 3c) ================= */}
+          {/* ================= TAB 2: QUẢN LÝ VÉ ================= */}
           {activeTab === 'tickets' && (
             <AdminTicketsTab
               events={events}
@@ -643,10 +687,22 @@ export default function AdminPage({
               loadTickets={loadTickets}
             />
           )}
+
+          {/* ================= TAB 3: QUẢN LÝ HOÀN TIỀN (REFUND) ================= */}
+          {activeTab === 'refunds' && (
+            <AdminRefundsTab
+              refundOrders={refundsList}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              isLoadingRefunds={isLoadingRefunds}
+              loadRefunds={loadRefunds}
+              onConfirmRefund={handleConfirmRefund}
+            />
+          )}
         </main>
       </div>
 
-      {/* ================= MODAL THÊM / SỬA SỰ KIỆN (tách ở Phần 3c) ================= */}
+      {/* ================= MODAL THÊM / SỬA SỰ KIỆN ================= */}
       {isModalOpen && (
         <EventFormModal
           editingEvent={editingEvent}

@@ -271,7 +271,6 @@ export async function createEventOnBackend(eventData, token) {
   if (!res.ok || !data.success) {
     throw new Error(data.message || 'Không thể tạo sự kiện.');
   }
-  console.log(eventData);
   return normalizeEvent(data.data);
 }
 
@@ -345,7 +344,7 @@ export async function holdZones(eventId, zones, token) {
  * @param {Array<string>} seatIds - Danh sách ID các ghế cần nhả
  * @param {string} token - Bearer token xác thực
  */
-export async function releaseSeats(userId, seatIds, token) {
+export async function releaseSeats(userId, seatIds, token, orderCode = null) {
   try {
     const authToken = token || null;
     const headers = { 'Content-Type': 'application/json' };
@@ -355,7 +354,7 @@ export async function releaseSeats(userId, seatIds, token) {
     const response = await fetch(`${API_BASE_URL}/seats/release`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ userId, seatIds }),
+      body: JSON.stringify({ userId, seatIds, orderCode }),
     });
 
     const data = await response.json();
@@ -365,6 +364,28 @@ export async function releaseSeats(userId, seatIds, token) {
     return data;
   } catch (err) {
     console.error('API releaseSeats error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Hủy trực tiếp đơn hàng theo orderCode (Route: POST /api/orders/:orderCode/cancel)
+ */
+export async function cancelOrder(orderCode, token) {
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(orderCode)}/cancel`, {
+      method: 'POST',
+      headers,
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Không thể hủy đơn hàng trên hệ thống.');
+    }
+    return data;
+  } catch (err) {
+    console.error('API cancelOrder error:', err);
     throw err;
   }
 }
@@ -382,6 +403,91 @@ export async function startCheckout(seatIds, returnUrl, cancelUrl, token) {
     body: JSON.stringify({ seatIds, returnUrl, cancelUrl }),
   });
   return res.json();
+}
+
+/**
+ * Kiểm tra và đồng bộ trạng thái đơn hàng từ Backend (Route: GET /api/orders/:orderCode/status)
+ */
+export async function fetchOrderStatus(orderCode, token) {
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(orderCode)}/status`, {
+    method: 'GET',
+    headers,
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || 'Không thể xác thực trạng thái đơn hàng.');
+  }
+  return data;
+}
+
+/**
+ * Lấy lịch sử đặt vé của người dùng hiện tại từ Database (Route: GET /api/orders/my-history)
+ */
+export async function fetchMyOrderHistory(token) {
+  try {
+    if (!token) return [];
+    const res = await fetch(`${API_BASE_URL}/orders/my-history`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status}`);
+    }
+    const result = await res.json();
+    return Array.isArray(result.data) ? result.data : [];
+  } catch (err) {
+    console.error('❌ Lỗi tải lịch sử đặt vé từ Backend:', err);
+    return [];
+  }
+}
+
+/**
+ * Admin: Lấy danh sách đơn hàng chờ hoàn tiền / đã hoàn tiền (Route: GET /api/admin/refunds)
+ */
+export async function fetchAdminRefunds(token) {
+  try {
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/admin/refunds`, {
+      method: 'GET',
+      headers,
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status}`);
+    }
+    const result = await res.json();
+    return Array.isArray(result.data) ? result.data : [];
+  } catch (err) {
+    console.error('❌ Lỗi tải danh sách hoàn tiền từ Backend:', err);
+    return [];
+  }
+}
+
+/**
+ * Admin: Xác nhận đã hoàn tiền thủ công cho đơn hàng (Route: POST /api/admin/orders/:orderCode/confirm-refund)
+ */
+export async function confirmOrderRefundOnBackend(orderCode, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(
+    `${API_BASE_URL}/admin/orders/${encodeURIComponent(orderCode)}/confirm-refund`,
+    {
+      method: 'POST',
+      headers,
+    },
+  );
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || 'Không thể xác nhận hoàn tiền cho đơn hàng này.');
+  }
+  return data.data;
 }
 
 /**

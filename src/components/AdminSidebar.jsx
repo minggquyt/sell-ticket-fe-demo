@@ -1,13 +1,13 @@
-import { LayoutDashboard, Ticket, LogOut, X } from 'lucide-react';
+import { LayoutDashboard, Ticket, RotateCcw, LogOut, X } from 'lucide-react';
 import './AdminSidebar.css';
 
-// Thanh điều hướng trái của trang quản trị (tách từ AdminPage ở Phần 3c).
-// CSS responsive của sidebar (trượt ra/vào trên mobile, cố định trên desktop) ở AdminSidebar.css.
+// Thanh điều hướng trái của trang quản trị.
 export default function AdminSidebar({
   user,
   activeTab,
   eventsCount,
   ticketsCount,
+  refundsCount = 0,
   isMobileSidebarOpen,
   onSelectTab,
   onClose,
@@ -31,12 +31,7 @@ export default function AdminSidebar({
           </div>
         </div>
 
-        <button
-          onClick={onClose}
-          className="admin-sidebar-close-btn"
-
-          title="Đóng menu"
-        >
+        <button onClick={onClose} className="admin-sidebar-close-btn" title="Đóng menu">
           <X size={18} />
         </button>
       </div>
@@ -80,6 +75,25 @@ export default function AdminSidebar({
             className={`sidebar-count-badge theme-pink${activeTab === 'tickets' ? ' active' : ''}`}
           >
             {ticketsCount}
+          </span>
+        </button>
+
+        {/* Mục 3: Quản lý hoàn tiền (Refund) */}
+        <button
+          onClick={() => onSelectTab('refunds')}
+          className={`sidebar-nav-btn theme-amber${activeTab === 'refunds' ? ' active' : ''}`}
+        >
+          <div className="sidebar-nav-btn-inner">
+            <RotateCcw
+              size={19}
+              color={activeTab === 'refunds' ? '#fbbf24' : 'var(--text-dim)'}
+            />
+            <span>Quản lý hoàn tiền</span>
+          </div>
+          <span
+            className={`sidebar-count-badge theme-amber${activeTab === 'refunds' ? ' active' : ''}`}
+          >
+            {refundsCount}
           </span>
         </button>
       </div>
