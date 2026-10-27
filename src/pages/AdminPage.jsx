@@ -409,16 +409,16 @@ export default function AdminPage({
           ? 0
           : Number(formData.seatsPerRow);
 
-      if (rowsCount < 2) {
+      if (rowsCount < 1) {
         toast.warning(
-          `Số hàng ghế không hợp lệ! Vui lòng nhập tối thiểu 2 hàng ghế (hiện tại: ${rowsCount}).`,
+          `Số hàng ghế không hợp lệ! Vui lòng nhập tối thiểu 1 hàng ghế (hiện tại: ${rowsCount}).`,
         );
         return;
       }
 
-      if (seatsPerRow < 3) {
+      if (seatsPerRow < 1) {
         toast.warning(
-          `Số ghế mỗi hàng không hợp lệ! Vui lòng nhập tối thiểu 3 ghế cho mỗi hàng (hiện tại: ${seatsPerRow}).`,
+          `Số ghế mỗi hàng không hợp lệ! Vui lòng nhập tối thiểu 1 ghế cho mỗi hàng (hiện tại: ${seatsPerRow}).`,
         );
         return;
       }

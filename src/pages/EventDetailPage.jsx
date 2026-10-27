@@ -81,6 +81,7 @@ export default function EventDetailPage({
   // Theo dõi ngầm mã đơn hàng vừa mở PayOS (nếu khách bấm Hủy trên web nhưng ngay sau đó bấm chuyển tiền trên App ngân hàng đã quét sẵn)
   const [recentPendingOrderCode, setRecentPendingOrderCode] = useState(null);
   const handledUrlReturnRef = useRef(false);
+  const hasProcessedBackRef = useRef(false);
 
   const getOrderStatus = (o) => o?.status || o?.orderStatus || '';
 
@@ -415,6 +416,12 @@ export default function EventDetailPage({
     if (!isCancel && !orderCode && !status) return;
 
     handledUrlReturnRef.current = true;
+    const storageKey = `event_reservation_${event.id}`;
+    if (isCancel) {
+      localStorage.removeItem(storageKey);
+      setIsReserved(false);
+      setReservedUntilTime(null);
+    }
     window.history.replaceState({}, '', window.location.pathname);
 
     // Nếu có orderCode (kể cả khi khách bấm Hủy hoặc Thành công): luôn hỏi Backend trước
@@ -652,6 +659,7 @@ export default function EventDetailPage({
   // --- KHÔI PHỤC PHIÊN GIỮ GHẾ KHI REFRESH HOẶC TỰ HỦY KHI BẤM NÚT BACK (<-) TỪ PAYOS ---
   useEffect(() => {
     if (!event?.id || !user?.id) return;
+    if (handledUrlReturnRef.current) return;
 
     // Nếu trên URL đang có tham số trả về từ PayOS thì nhường cho useEffect xử lý redirect ở trên
     const searchParams = new URLSearchParams(window.location.search);
@@ -666,6 +674,7 @@ export default function EventDetailPage({
     const storageKey = `event_reservation_${event.id}`;
 
     const checkAndRestoreReservation = () => {
+      if (hasProcessedBackRef.current) return;
       const savedReservation = localStorage.getItem(storageKey);
       if (!savedReservation) return;
 
@@ -677,6 +686,10 @@ export default function EventDetailPage({
         // NẾU ĐANG Ở BƯỚC PAYMENT_PROCESSING MÀ QUAY LẠI TRANG NÀY (BẤM NÚT BACK <- TRÌNH DUYỆT):
         // Kiểm tra xem đơn đã thanh toán trên PayOS chưa trước khi hủy
         if (parsedData.step === 'PAYMENT_PROCESSING' && parsedData.userId === user.id) {
+          hasProcessedBackRef.current = true;
+          localStorage.removeItem(storageKey);
+          setIsReserved(false);
+          setReservedUntilTime(null);
           const { token } = getAuthContext();
           if (parsedData.orderCode && token) {
             fetchOrderStatus(parsedData.orderCode, token)
@@ -899,6 +912,8 @@ export default function EventDetailPage({
   // --- XỬ LÝ THANH TOÁN QUA PAYOS ---
   const handlePayment = async () => {
     try {
+      handledUrlReturnRef.current = false;
+      hasProcessedBackRef.current = false;
       setIsProcessingPayment(true);
       const token = user?.token;
       let seatIdsToCheckout = [];
@@ -1099,77 +1114,6 @@ export default function EventDetailPage({
           </div>
         </div>
       )}
-
-      {/* BANNER XEM LẠI VÉ ĐÃ MUA TẠI SỰ KIỆN NÀY */}
-      {activeTab === 'booking' &&
-        bookingStep === 'booking' &&
-        myPurchasedOrdersForEvent.length > 0 && (
-          <div className="glass-panel detail-owned-tickets-banner animate-fade-in">
-            <div className="detail-owned-tickets-head">
-              <div className="detail-owned-tickets-left">
-                <div className="detail-owned-icon-box">
-                  <CheckCircle2 size={20} />
-                </div>
-                <div>
-                  <div className="detail-owned-title">
-                    Bạn đã sở hữu {myPurchasedOrdersForEvent.length} đơn vé tại sự kiện này
-                  </div>
-                  <div className="detail-owned-sub">
-                    Bấm vào từng đơn bên dưới để xem ngay Vé điện tử (E-Ticket) hoặc mở trang Lịch
-                    sử đặt vé.
-                  </div>
-                </div>
-              </div>
-              {onOpenCart && (
-                <button onClick={onOpenCart} className="detail-owned-history-btn">
-                  Mở trang Lịch sử đặt vé →
-                </button>
-              )}
-            </div>
-
-            <div className="detail-owned-orders-row">
-              {myPurchasedOrdersForEvent.map((ord) => {
-                const items = Array.isArray(ord.items) ? ord.items : [];
-                const seatCodes = items.map((i) => i.seatNumber).filter(Boolean);
-                return (
-                  <button
-                    key={ord.orderCode}
-                    onClick={() => handleViewPurchasedOrder(ord)}
-                    className="detail-owned-order-chip"
-                  >
-                    <Ticket size={14} color="var(--accent-cyan)" />
-                    <span className="detail-owned-order-code">Đơn #{ord.orderCode}</span>
-                    <span className="detail-owned-order-seats">
-                      ({seatCodes.join(', ') || `${items.length} vé`})
-                    </span>
-                    <span className="detail-owned-order-action">Xem chi tiết vé</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-      {/* BANNER ĐƠN CHỜ HOÀN TIỀN / ĐÃ HOÀN TIỀN TẠI SỰ KIỆN NÀY */}
-      {activeTab === 'booking' &&
-        bookingStep === 'booking' &&
-        myRefundOrdersForEvent.length > 0 && (
-          <div className="glass-panel detail-refund-banner animate-fade-in">
-            <div className="detail-refund-banner-left">
-              <RotateCcw size={18} color="#fbbf24" />
-              <div>
-                Bạn có <strong>{myRefundOrdersForEvent.length} đơn hàng</strong> thanh toán muộn (sau
-                khi hủy/hết hạn và ghế đã có người chọn) thuộc diện{' '}
-                <strong>Hoàn tiền (Refund)</strong> tại sự kiện này.
-              </div>
-            </div>
-            {onOpenCart && (
-              <button onClick={onOpenCart} className="detail-owned-history-btn">
-                Xem trạng thái hoàn tiền →
-              </button>
-            )}
-          </div>
-        )}
 
       {/* TAB: BOOKING - Bước 1: Chọn vé */}
       {activeTab === 'booking' && bookingStep === 'booking' && (

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CheckCircle2,
   ShieldCheck,
@@ -70,7 +71,7 @@ export default function ETicketModal({
   const eventVenue = order.location || event?.venue || event?.location || 'Chưa xác định';
   const eventId = order.eventId || event?.id;
 
-  return (
+  return createPortal(
     <div className="etm-overlay animate-fade-in" onClick={onClose}>
       <div className="glass-panel etm-card" onClick={(e) => e.stopPropagation()}>
         {/* Nút đóng ở góc trên */}
@@ -180,6 +181,7 @@ export default function ETicketModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

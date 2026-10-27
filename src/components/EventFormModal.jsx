@@ -183,9 +183,9 @@ export default function EventFormModal({
               <div className="efm-grid-3">
                 <div>
                   <label
-                    className={`efm-label${(formData.rowsCount === '' || formData.rowsCount == null ? 0 : Number(formData.rowsCount)) < 2 ? ' efm-label-error' : ''}`}
+                    className={`efm-label${(formData.rowsCount === '' || formData.rowsCount == null ? 0 : Number(formData.rowsCount)) < 1 ? ' efm-label-error' : ''}`}
                   >
-                    Số hàng ghế (tối thiểu 2) *
+                    Số hàng ghế (tối thiểu 1) *
                   </label>
                   <input
                     type="number"
@@ -209,13 +209,13 @@ export default function EventFormModal({
                         totalSeats: calcTotal,
                       });
                     }}
-                    className={`efm-input efm-input-outline${(formData.rowsCount === '' || formData.rowsCount == null ? 0 : Number(formData.rowsCount)) < 2 ? ' efm-input-error' : ''}`}
+                    className={`efm-input efm-input-outline${(formData.rowsCount === '' || formData.rowsCount == null ? 0 : Number(formData.rowsCount)) < 1 ? ' efm-input-error' : ''}`}
                   />
                   {(formData.rowsCount === '' || formData.rowsCount == null
                     ? 0
-                    : Number(formData.rowsCount)) < 2 ? (
+                    : Number(formData.rowsCount)) < 1 ? (
                     <span className="efm-field-error">
-                      ⚠️ Tối thiểu phải có 2 hàng ghế (hiện tại:{' '}
+                      ⚠️ Tối thiểu phải có 1 hàng ghế (hiện tại:{' '}
                       {formData.rowsCount === '' || formData.rowsCount == null
                         ? 0
                         : formData.rowsCount}
@@ -231,9 +231,9 @@ export default function EventFormModal({
 
                 <div>
                   <label
-                    className={`efm-label${(formData.seatsPerRow === '' || formData.seatsPerRow == null ? 0 : Number(formData.seatsPerRow)) < 3 ? ' efm-label-error' : ''}`}
+                    className={`efm-label${(formData.seatsPerRow === '' || formData.seatsPerRow == null ? 0 : Number(formData.seatsPerRow)) < 1 ? ' efm-label-error' : ''}`}
                   >
-                    Số ghế mỗi hàng (tối thiểu 3) *
+                    Số ghế mỗi hàng (tối thiểu 1) *
                   </label>
                   <input
                     type="number"
@@ -257,13 +257,13 @@ export default function EventFormModal({
                         totalSeats: calcTotal,
                       });
                     }}
-                    className={`efm-input efm-input-outline${(formData.seatsPerRow === '' || formData.seatsPerRow == null ? 0 : Number(formData.seatsPerRow)) < 3 ? ' efm-input-error' : ''}`}
+                    className={`efm-input efm-input-outline${(formData.seatsPerRow === '' || formData.seatsPerRow == null ? 0 : Number(formData.seatsPerRow)) < 1 ? ' efm-input-error' : ''}`}
                   />
                   {(formData.seatsPerRow === '' || formData.seatsPerRow == null
                     ? 0
-                    : Number(formData.seatsPerRow)) < 3 ? (
+                    : Number(formData.seatsPerRow)) < 1 ? (
                     <span className="efm-field-error">
-                      ⚠️ 1 hàng phải có tối thiểu 3 ghế (hiện tại:{' '}
+                      ⚠️ 1 hàng phải có tối thiểu 1 ghế (hiện tại:{' '}
                       {formData.seatsPerRow === '' || formData.seatsPerRow == null
                         ? 0
                         : formData.seatsPerRow}
