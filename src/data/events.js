@@ -8,7 +8,7 @@ export const MAX_TICKETS_PER_ORDER = 5;
 export const isSeatedEvent = (event) => {
   if (!event) return false;
   return event.event_type === 'SEAT_BASED' || event.type === 'seated';
-};q
+};
 
 export const formatEventDate = (event) => {
   if (!event) return '';
