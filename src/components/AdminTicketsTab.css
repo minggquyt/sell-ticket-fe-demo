@@ -426,3 +426,37 @@
   font-weight: 700;
   color: var(--accent-pink);
 }
+
+.atk-status-badge.refund-pending {
+  background-color: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+.atk-status-badge.refunded {
+  background-color: rgba(6, 182, 212, 0.16);
+  color: #22d3ee;
+  border-color: rgba(6, 182, 212, 0.4);
+}
+.atk-refund-confirm-btn {
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(16, 185, 129, 0.25));
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  transition: all 0.2s ease;
+}
+.atk-refund-confirm-btn:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: var(--accent-emerald);
+  color: #fff;
+}
+.atk-refund-confirm-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

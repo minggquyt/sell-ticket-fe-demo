@@ -455,3 +455,135 @@
   justify-content: center;
   gap: 8px;
 }
+
+/* Banner hiển thị vé đã sở hữu & đơn hoàn tiền của khách ngay tại trang chi tiết sự kiện */
+.detail-owned-tickets-banner {
+  margin-bottom: 18px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 182, 212, 0.08));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detail-owned-tickets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.detail-owned-tickets-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-owned-icon-box {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--accent-emerald);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.detail-owned-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.detail-owned-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.detail-owned-history-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(6, 182, 212, 0.16);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  color: var(--accent-cyan);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.detail-owned-history-btn:hover {
+  background: rgba(6, 182, 212, 0.26);
+  color: #fff;
+}
+
+.detail-owned-orders-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-owned-order-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #fff;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.detail-owned-order-chip:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(6, 182, 212, 0.16);
+  transform: translateY(-1px);
+}
+
+.detail-owned-order-code {
+  font-family: monospace;
+  font-weight: 800;
+  color: var(--accent-emerald);
+}
+
+.detail-owned-order-seats {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.detail-owned-order-action {
+  color: var(--accent-cyan);
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.detail-refund-banner {
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.detail-refund-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #fde68a;
+  font-size: 13px;
+  line-height: 1.5;
+}

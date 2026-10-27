@@ -233,3 +233,13 @@
   border: 1px solid rgba(239, 68, 68, 0.25);
   cursor: pointer;
 }
+
+.sidebar-nav-btn.theme-amber.active {
+  background-color: rgba(245, 158, 11, 0.18);
+  color: #fff;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.sidebar-count-badge.theme-amber.active {
+  background-color: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}

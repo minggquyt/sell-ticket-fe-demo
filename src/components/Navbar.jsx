@@ -6,8 +6,6 @@ import {
   LogOut,
   Menu,
   X,
-  LayoutDashboard,
-  ShoppingCart,
   ChevronDown,
 } from 'lucide-react';
 import './Navbar.css';
@@ -38,6 +36,9 @@ export default function Navbar({
   }, []);
 
   const isAdmin = user && user.role === 'admin';
+  const paidCount = Array.isArray(cart)
+    ? cart.filter((o) => (o.status || o.orderStatus) === 'SUCCESS').length
+    : 0;
 
   return (
     <header className="navbar-header">
@@ -55,7 +56,7 @@ export default function Navbar({
           </div>
         </div>
 
-        {/* Navigation links - Khám phá sự kiện (Ẩn khi đang ở trang login) */}
+        {/* Navigation links - Khám phá sự kiện & Lịch sử đặt vé (Ẩn khi đang ở trang login) */}
         {currentRoute !== 'login' && (
           <nav className="desktop-nav">
             <button
@@ -65,19 +66,28 @@ export default function Navbar({
               <Compass size={16} />
               Khám phá Sự kiện
             </button>
+            {user && (
+              <button
+                onClick={() => (onOpenCart ? onOpenCart() : onNavigate('my-tickets'))}
+                className={`nav-explore-btn${currentRoute === 'my-tickets' ? ' active' : ''}`}
+              >
+                <Ticket size={16} />
+                Lịch sử đặt vé
+              </button>
+            )}
           </nav>
         )}
 
-        {/* User Profile / Login Action & Cart */}
+        {/* User Profile / Login Action & Lịch sử đặt vé */}
         <div className="navbar-actions">
-          {/* Quick Cart Access Button (Accessible on both mobile and desktop) */}
+          {/* Quick Ticket History Access Button (Accessible on both mobile and desktop) */}
           <button
             onClick={onOpenCart}
-            title={`Giỏ hàng (${cart.length} vé)`}
-            className={`nav-cart-btn${cart.length > 0 ? ' has-items' : ''}`}
+            title={`Lịch sử đặt vé (${paidCount} đơn thành công)`}
+            className={`nav-cart-btn${paidCount > 0 || currentRoute === 'my-tickets' ? ' has-items' : ''}`}
           >
-            <ShoppingCart size={19} />
-            {cart.length > 0 && <span className="nav-cart-badge">{cart.length}</span>}
+            <Ticket size={19} />
+            {paidCount > 0 && <span className="nav-cart-badge">{paidCount}</span>}
           </button>
 
           {user ? (
@@ -121,7 +131,7 @@ export default function Navbar({
                     </div>
                   </div>
 
-                  {/* Mục Giỏ Hàng */}
+                  {/* Mục Lịch sử đặt vé */}
                   <button
                     onClick={() => {
                       setDropdownOpen(false);
@@ -129,15 +139,15 @@ export default function Navbar({
                     }}
                     className="nav-dropdown-item"
                   >
-                    <ShoppingCart size={17} color="var(--accent-cyan)" />
+                    <Ticket size={17} color="var(--accent-cyan)" />
                     <div className="nav-dropdown-item-main">
                       <div className="nav-dropdown-cart-row">
-                        <span>Giỏ hàng</span>
-                        {cart.length > 0 && (
-                          <span className="nav-cart-count-badge">{cart.length} vé</span>
+                        <span>Lịch sử đặt vé</span>
+                        {paidCount > 0 && (
+                          <span className="nav-cart-count-badge">{paidCount} đơn</span>
                         )}
                       </div>
-                      <div className="nav-dropdown-item-sub">Vé đã chọn & thanh toán</div>
+                      <div className="nav-dropdown-item-sub">Xem lại vé E-Ticket & giao dịch</div>
                     </div>
                   </button>
 
@@ -202,14 +212,14 @@ export default function Navbar({
               setMobileMenuOpen(false);
               if (onOpenCart) onOpenCart();
             }}
-            className="nav-mobile-item nav-mobile-item-between"
+            className={`nav-mobile-item nav-mobile-item-between${currentRoute === 'my-tickets' ? ' active' : ''}`}
           >
             <div className="nav-mobile-cart-left">
-              <ShoppingCart size={18} color="var(--accent-cyan)" />
-              <span>Giỏ hàng</span>
+              <Ticket size={18} color="var(--accent-cyan)" />
+              <span>Lịch sử đặt vé</span>
             </div>
-            {cart.length > 0 && (
-              <span className="nav-cart-count-badge nav-cart-count-badge-lg">{cart.length} vé</span>
+            {paidCount > 0 && (
+              <span className="nav-cart-count-badge nav-cart-count-badge-lg">{paidCount} đơn</span>
             )}
           </button>
 

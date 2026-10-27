@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/Navbar';
-import CartModal from './components/CartModal';
 import LoginPage from './pages/LoginPage';
 import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
+import OrderHistoryPage from './pages/OrderHistoryPage';
 import AdminPage from './pages/AdminPage';
 import {
   fetchEvents,
   fetchSeatsByEvent,
+  fetchMyOrderHistory,
   createEventOnBackend,
   updateEventOnBackend,
   deleteEventOnBackend,
@@ -48,12 +49,11 @@ function ScrollToTop() {
 }
 
 // Trang chi tiết sự kiện: lấy id từ URL bằng useParams (H2).
-// Cách chọn sự kiện giữ nguyên như router tự chế trước đây: tìm theo id,
-// chưa có trong danh sách thì tạm lấy sự kiện đầu tiên, danh sách trống thì báo đang tải/không tìm thấy.
 function EventDetailRoute({
   eventsList,
   isLoadingEvents,
   user,
+  userOrders,
   occupiedSeatsByEvent,
   zoneRemainingByEvent,
   onPaymentSuccess,
@@ -61,6 +61,7 @@ function EventDetailRoute({
   onRequireLogin,
   onAddToCart,
   onOpenCart,
+  onRefreshOrders,
 }) {
   const { id } = useParams();
   const currentEvent =
@@ -81,6 +82,7 @@ function EventDetailRoute({
     <EventDetailPage
       event={currentEvent}
       user={user}
+      userOrders={userOrders}
       occupiedSeats={occupiedSeatsByEvent[currentEvent.id] || new Set()}
       zoneRemaining={zoneRemainingByEvent[currentEvent.id] || {}}
       onPaymentSuccess={onPaymentSuccess}
@@ -88,6 +90,7 @@ function EventDetailRoute({
       onRequireLogin={onRequireLogin}
       onAddToCart={onAddToCart}
       onOpenCart={onOpenCart}
+      onRefreshOrders={onRefreshOrders}
     />
   );
 }
@@ -96,8 +99,8 @@ function AppShell() {
   const [eventsList, setEventsList] = useState([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [user, setUser] = useState(null);
-  const [cart, setCart] = useState([]); // Giỏ hàng: mảng các vé đã thanh toán thành công
-  const [isCartOpen, setIsCartOpen] = useState(false); // Quản lý mở modal giỏ hàng
+  const [cart, setCart] = useState([]); // Danh sách toàn bộ đơn đặt vé từ Database (Lịch sử đặt vé)
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
   // Quản lý ghế đã bán theo từng sự kiện (persistent trong phiên làm việc)
   const [occupiedSeatsByEvent, setOccupiedSeatsByEvent] = useState({});
@@ -116,12 +119,13 @@ function AppShell() {
       ? 'login'
       : location.pathname === '/admin'
         ? 'admin'
-        : urlEventId
-          ? 'detail'
-          : 'events';
+        : location.pathname === '/my-tickets'
+          ? 'my-tickets'
+          : urlEventId
+            ? 'detail'
+            : 'events';
 
-  // Nhớ sự kiện đang xem dở để đăng nhập xong quay lại đúng trang chi tiết (như router tự chế trước đây).
-  // Cập nhật ngay trong lúc render theo mẫu React khuyến nghị, không dùng effect.
+  // Nhớ sự kiện đang xem dở để đăng nhập xong quay lại đúng trang chi tiết
   const [lastViewedEventId, setLastViewedEventId] = useState(null);
   if (urlEventId && urlEventId !== lastViewedEventId) {
     setLastViewedEventId(urlEventId);
@@ -141,6 +145,46 @@ function AppShell() {
       console.warn('Lỗi đọc user từ localStorage:', e);
     }
   }, []);
+
+  // Tải lịch sử đặt vé của người dùng từ Database (GET /api/orders/my-history)
+  const loadUserOrders = useCallback(
+    async (tokenOverride = null, silent = false) => {
+      const activeToken =
+        tokenOverride ||
+        user?.token ||
+        (() => {
+          try {
+            return JSON.parse(localStorage.getItem('sellticket_user') || 'null')?.token;
+          } catch {
+            return null;
+          }
+        })();
+
+      if (!activeToken) {
+        setCart([]);
+        return;
+      }
+
+      if (!silent) setIsLoadingOrders(true);
+      try {
+        const history = await fetchMyOrderHistory(activeToken);
+        setCart(history);
+      } catch (err) {
+        console.warn('Không thể đồng bộ lịch sử đặt vé:', err);
+      } finally {
+        if (!silent) setIsLoadingOrders(false);
+      }
+    },
+    [user?.token],
+  );
+
+  useEffect(() => {
+    if (user?.token) {
+      loadUserOrders(user.token, false);
+    } else {
+      setCart([]);
+    }
+  }, [user?.token, loadUserOrders]);
 
   // Tải danh sách sự kiện từ Backend
   const loadEvents = useCallback(async (isSilent = false) => {
@@ -177,7 +221,7 @@ function AppShell() {
     return () => clearInterval(interval);
   }, [loadEvents]);
 
-  // Điều hướng chuyển trang (H2: giữ nguyên chữ ký cũ, ruột dùng React Router)
+  // Điều hướng chuyển trang
   const navigateTo = (route, eventId = null) => {
     if (isAdminLoggedIn) {
       navigate('/admin');
@@ -187,6 +231,8 @@ function AppShell() {
       navigate('/login');
     } else if (route === 'admin') {
       navigate('/admin');
+    } else if (route === 'my-tickets') {
+      navigate('/my-tickets');
     } else if (route === 'detail' && eventId) {
       navigate(`/events/${eventId}`);
     } else {
@@ -198,6 +244,9 @@ function AppShell() {
   const handleLoginSuccess = (userData) => {
     setUser(userData);
     localStorage.setItem('sellticket_user', JSON.stringify(userData));
+    if (userData?.token) {
+      loadUserOrders(userData.token, true);
+    }
     if (isAdminUser(userData)) {
       navigate('/admin');
     } else if (lastViewedEventId) {
@@ -214,9 +263,9 @@ function AppShell() {
     navigate('/events');
   };
 
-  // Thêm vé vào giỏ hàng sau khi thanh toán thành công
-  const handleAddToCart = (ticketInfo) => {
-    setCart((prev) => [...prev, ticketInfo]);
+  // Khi vừa thanh toán thành công một đơn mới: đồng bộ ngay toàn bộ lịch sử đơn từ Database
+  const handleAddToCart = () => {
+    loadUserOrders(null, true);
   };
 
   // Xử lý cập nhật ghế / vé khi thanh toán thành công
@@ -239,6 +288,7 @@ function AppShell() {
         return { ...prev, [eventId]: currentZones };
       });
     }
+    loadUserOrders(null, true);
   };
 
   // Đồng bộ trạng thái ghế đã bán từ Backend khi người dùng xem sự kiện
@@ -314,6 +364,7 @@ function AppShell() {
       toast.error('Đã xóa sự kiện: ' + err.message);
     }
   };
+
   const eventsElement = (
     <EventsPage
       events={eventsList}
@@ -367,7 +418,7 @@ function AppShell() {
         user={user}
         onLogout={handleLogout}
         cart={cart}
-        onOpenCart={() => setIsCartOpen(true)}
+        onOpenCart={() => navigateTo('my-tickets')}
       />
 
       {/* Main View Router — React Router (H2) */}
@@ -382,13 +433,30 @@ function AppShell() {
                 eventsList={eventsList}
                 isLoadingEvents={isLoadingEvents}
                 user={user}
+                userOrders={cart}
                 occupiedSeatsByEvent={occupiedSeatsByEvent}
                 zoneRemainingByEvent={zoneRemainingByEvent}
                 onPaymentSuccess={handlePaymentSuccess}
                 onBack={() => navigateTo('events')}
                 onRequireLogin={() => navigateTo('login')}
                 onAddToCart={handleAddToCart}
-                onOpenCart={() => setIsCartOpen(true)}
+                onOpenCart={() => navigateTo('my-tickets')}
+                onRefreshOrders={() => loadUserOrders(null, true)}
+              />
+            }
+          />
+          <Route
+            path="/my-tickets"
+            element={
+              <OrderHistoryPage
+                user={user}
+                orders={cart}
+                events={eventsList}
+                isLoading={isLoadingOrders}
+                onRefresh={() => loadUserOrders(null, false)}
+                onSelectEvent={(eventId) => navigateTo('detail', eventId)}
+                onBack={() => navigateTo('events')}
+                onRequireLogin={() => navigateTo('login')}
               />
             }
           />
@@ -398,10 +466,7 @@ function AppShell() {
         </Routes>
       </main>
 
-      {/* Global Cart Modal - Làm mờ nền toàn màn hình, đặt ở root app */}
-      <CartModal isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} cart={cart} />
-
-      {/* Global Footer (Chỉ hiển thị ngoài trang Admin) — tách thành component ở Phần 3a */}
+      {/* Global Footer (Chỉ hiển thị ngoài trang Admin) */}
       {!(currentRoute === 'admin' && isAdminLoggedIn) && <Footer onNavigate={navigateTo} />}
     </div>
   );
