@@ -1,4 +1,5 @@
 import { formatVND } from '../utils/format.js';
+import { parseSeatCode } from '../utils/seatLayout.js';
 import './SeatMap.css';
 
 export default function SeatMap({
@@ -18,6 +19,15 @@ export default function SeatMap({
       s.status === 'AVAILABLE' && !occupiedSeats.has(s.seat_number) && !occupiedSeats.has(s.id),
   ).length;
 
+  // Khóa chuẩn hóa 'A1'/'A-1' -> 'A-1': occupiedSeats do App/EventDetailPage
+  // đẩy lên đang ở dạng 'A-1' (parseSeatCode), còn seat_number BE trả 'A1'.
+  // Chuẩn hóa cả 2 phía để tra cứu trạng thái giữ ghế không bị trượt.
+  const normalizeSeatKey = (code) => {
+    const parsed = parseSeatCode(code);
+    return parsed ? `${parsed.row}-${parsed.number}` : String(code || '');
+  };
+  const occupiedKeys = new Set([...occupiedSeats].map((k) => normalizeSeatKey(k)));
+
   return (
     <div className="seatmap-wrap" style={{ '--tier-color': tier.color }}>
       <div className="seatmap-stage">
@@ -35,6 +45,14 @@ export default function SeatMap({
         <div className="seatmap-legend-item">
           <div className="seatmap-legend-swatch seatmap-legend-swatch-sold" />
           <span className="seatmap-legend-dim">Đã bán</span>
+        </div>
+        <div className="seatmap-legend-item">
+          <div className="seatmap-legend-swatch seatmap-legend-swatch-reserved" />
+          <span className="seatmap-legend-dim">Đang giữ chỗ</span>
+        </div>
+        <div className="seatmap-legend-item">
+          <div className="seatmap-legend-swatch seatmap-legend-swatch-payment" />
+          <span className="seatmap-legend-dim">Đang thanh toán</span>
         </div>
         <div className="seatmap-legend-item">
           <div className="seatmap-legend-swatch seatmap-legend-swatch-selected" />
@@ -62,11 +80,18 @@ export default function SeatMap({
                       const seatCol = seat.colNumber || seatCode.replace(/^[A-Za-z]+/, '');
 
                       // Kiểm tra trạng thái dựa trên dữ liệu thật từ BE
-                      const isOccupied =
-                        isUpcoming ||
-                        seat.status === 'SOLD' ||
+                      const isInOccupied =
                         occupiedSeats.has(seatCode) ||
-                        (seatId && occupiedSeats.has(seatId));
+                        (seatId && occupiedSeats.has(seatId)) ||
+                        occupiedKeys.has(normalizeSeatKey(seatCode));
+                      // Ghế người khác đang giữ / đang thanh toán: chỉ tô màu
+                      // khác khi nó thật sự nằm trong occupiedSeats (tầng trên
+                      // đã loại ghế của chính mình + ghế hết hạn giữ).
+                      const isReserved =
+                        !isUpcoming && seat.status === 'RESERVED' && isInOccupied;
+                      const isPaymentProcessing =
+                        !isUpcoming && seat.status === 'PAYMENT_PROCESSING' && isInOccupied;
+                      const isOccupied = isUpcoming || seat.status === 'SOLD' || isInOccupied;
                       const isSelected =
                         !isUpcoming &&
                         selectedSeats.some(
@@ -81,13 +106,23 @@ export default function SeatMap({
                           title={
                             isUpcoming
                               ? `Ghế ${seatCode} (Sự kiện chưa mở bán)`
-                              : isOccupied
-                                ? `Ghế ${seatCode} đã có người mua`
-                                : `Ghế ${seatCode}\n${tier.name} (${formatVND(seat.price)})`
+                              : isReserved
+                                ? `Ghế ${seatCode} đang được giữ chỗ`
+                                : isPaymentProcessing
+                                  ? `Ghế ${seatCode} đang chờ thanh toán`
+                                  : isOccupied
+                                    ? `Ghế ${seatCode} đã có người mua`
+                                    : `Ghế ${seatCode}\n${tier.name} (${formatVND(seat.price)})`
                           }
-                          className={`seat-btn${isOccupied ? ' seat-btn-occupied' : ''}${
-                            isSelected ? ' seat-btn-selected' : ''
-                          }`}
+                          className={`seat-btn${
+                            isReserved
+                              ? ' seat-btn-reserved'
+                              : isPaymentProcessing
+                                ? ' seat-btn-payment'
+                                : isOccupied
+                                  ? ' seat-btn-occupied'
+                                  : ''
+                          }${isSelected ? ' seat-btn-selected' : ''}`}
                         >
                           {/* Hiển thị số thứ tự ghế bên trong nút (A1..A12 trên desktop, 1..12 trên mobile) */}
                           <span className="seat-code-full">{seat.displayCode || seatCode}</span>
