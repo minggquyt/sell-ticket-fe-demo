@@ -253,6 +253,41 @@ export default function EventDetailPage({
     reloadBackendSeats();
   }, [event?.id, user?.id]);
 
+  // Polling realtime ghế (duyệt 31/10/2026, 3 giây): tải lại trạng thái ghế
+  // liên tục để thấy ghế người khác giữ/mua mà không cần F5. Tạm dừng khi
+  // tab bị ẩn, quay lại tab thì tải ngay + chạy tiếp; dừng hẳn khi rời trang.
+  // Chỉ đọc lại ghế (kể cả zone), không đụng ghế đang chọn / đếm ngược / thanh toán.
+  useEffect(() => {
+    if (!event?.id) return;
+    let intervalId = null;
+    const startPolling = () => {
+      if (intervalId !== null) return;
+      intervalId = setInterval(() => {
+        reloadBackendSeats();
+      }, 3000);
+    };
+    const stopPolling = () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        reloadBackendSeats();
+        startPolling();
+      }
+    };
+    startPolling();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [event?.id, user?.id]);
+
   // --- HÀM HIỂN THỊ MÀN HÌNH E-TICKET KHI ĐƠN HÀNG ĐƯỢC XÁC NHẬN SUCCESS ---
   const triggerOrderSuccessUI = (orderData, showConfetti = true) => {
     const items = Array.isArray(orderData.items) ? orderData.items : [];
