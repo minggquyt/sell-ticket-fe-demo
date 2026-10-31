@@ -39,6 +39,7 @@ import SeatSelector from '../components/SeatSelector.jsx';
 import ZoneSelector from '../components/ZoneSelector.jsx';
 import BookingSummary from '../components/BookingSummary.jsx';
 import ETicketModal from '../components/ETicketModal.jsx';
+import CustomerInfoModal from '../components/CustomerInfoModal.jsx';
 import './EventDetailPage.css';
 
 export default function EventDetailPage({
@@ -82,27 +83,52 @@ export default function EventDetailPage({
   const [recentPendingOrderCode, setRecentPendingOrderCode] = useState(null);
   const handledUrlReturnRef = useRef(false);
   const hasProcessedBackRef = useRef(false);
+  // Quản lý trạng thái ẩn/hiện của Modal nhập thông tin
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+
+  // Lưu tạm thông tin SĐT và CCCD do người dùng nhập trong modal
+  const [customerInfo, setCustomerInfo] = useState({
+    phone: '',
+    citizenId: ''
+  });
 
   const getOrderStatus = (o) => o?.status || o?.orderStatus || '';
+
+  // 1. Khi người dùng click vào nút Thanh toán trên giao diện giữ ghế
+  const handlePrePaymentClick = () => {
+    if (!user) {
+      if (onRequireLogin) onRequireLogin();
+      else alert('Vui lòng đăng nhập để tiếp tục thanh toán!'); // THAY BẰNG POPUP MODAL 
+      return;
+    }
+    // Mở modal nhập SĐT & CCCD trước khi gọi API thanh toán
+    setIsPaymentModalOpen(true);
+  };
+
+  // Khi người dùng đã nhập xong trên Modal và bấm nút Xác nhận để đi tiếp
+  const handleConfirmPaymentWithInfo = (info) => {
+    setIsPaymentModalOpen(false);
+    handlePayment(info); // Gọi hàm thanh toán với thông tin nhận được
+  };
 
   // Danh sách các đơn vé đã thanh toán thành công (SUCCESS) của user tại đúng sự kiện này
   const myPurchasedOrdersForEvent = Array.isArray(userOrders)
     ? userOrders.filter(
-        (o) =>
-          getOrderStatus(o) === 'SUCCESS' &&
-          ((o.eventId && String(o.eventId) === String(event?.id)) ||
-            (o.eventTitle && o.eventTitle === event?.title)),
-      )
+      (o) =>
+        getOrderStatus(o) === 'SUCCESS' &&
+        ((o.eventId && String(o.eventId) === String(event?.id)) ||
+          (o.eventTitle && o.eventTitle === event?.title)),
+    )
     : [];
 
   // Danh sách các đơn chờ hoàn tiền / đã hoàn tiền của user tại sự kiện này
   const myRefundOrdersForEvent = Array.isArray(userOrders)
     ? userOrders.filter(
-        (o) =>
-          (getOrderStatus(o) === 'REFUND_PENDING' || getOrderStatus(o) === 'REFUNDED') &&
-          ((o.eventId && String(o.eventId) === String(event?.id)) ||
-            (o.eventTitle && o.eventTitle === event?.title)),
-      )
+      (o) =>
+        (getOrderStatus(o) === 'REFUND_PENDING' || getOrderStatus(o) === 'REFUNDED') &&
+        ((o.eventId && String(o.eventId) === String(event?.id)) ||
+          (o.eventTitle && o.eventTitle === event?.title)),
+    )
     : [];
 
   // SEATED-BASED & GENERAL BOOKING STATE
@@ -237,9 +263,9 @@ export default function EventDetailPage({
   // Đồng bộ giá vé ghế chính xác từ Backend hoặc cấu hình sự kiện
   const effectiveSeatPrice =
     backendSeats &&
-    backendSeats.length > 0 &&
-    backendSeats[0].price != null &&
-    Number(backendSeats[0].price) > 0
+      backendSeats.length > 0 &&
+      backendSeats[0].price != null &&
+      Number(backendSeats[0].price) > 0
       ? Number(backendSeats[0].price)
       : getMinPrice(event) || baseSingleSeatTier.price || 500000;
 
@@ -816,7 +842,7 @@ export default function EventDetailPage({
               const token = user?.token;
               releaseSeats(parsedData.userId || user?.id, ids, token)
                 .then(() => reloadBackendSeats())
-                .catch(() => {});
+                .catch(() => { });
             }
           }
         }
@@ -945,16 +971,19 @@ export default function EventDetailPage({
   };
 
   // --- XỬ LÝ THANH TOÁN QUA PAYOS ---
-  const handlePayment = async () => {
+  const handlePayment = async (info) => {
     try {
       handledUrlReturnRef.current = false;
       hasProcessedBackRef.current = false;
       setIsProcessingPayment(true);
+      
       const token = user?.token;
+
+      console.log(token)
+
       let seatIdsToCheckout = [];
       if (isSeated) {
         seatIdsToCheckout = selectedSeats.map((s) => s.id).filter(Boolean);
-
         if (seatIdsToCheckout.length === 0) {
           seatIdsToCheckout = selectedSeats
             .map((s) => {
@@ -973,11 +1002,19 @@ export default function EventDetailPage({
         throw new Error('Không tìm thấy danh sách ghế cần thanh toán. Vui lòng thực hiện lại.');
       }
 
-      // PayOS sẽ tự gắn ?code=00&status=PAID&orderCode=... hoặc ?cancel=true&status=CANCELLED&orderCode=...
       const returnUrl = `${window.location.origin}/events/${event.id}`;
       const cancelUrl = `${window.location.origin}/events/${event.id}`;
 
-      const checkoutRes = await startCheckout(seatIdsToCheckout, returnUrl, cancelUrl, token);
+      // 🔑 TRUYỀN THÊM SĐT VÀ CCCD VÀO API STARTCHECKOUT (TÙY THEO PAYLOAD BE CỦA BẠN YÊU CẦU)
+      const checkoutPayload = {
+        seatIds: seatIdsToCheckout,
+        returnUrl,
+        cancelUrl,
+        phone: info?.phone,         // SĐT khách hàng
+        citizenId: info?.citizenId   // CCCD khách hàng
+      };
+
+      const checkoutRes = await startCheckout(checkoutPayload, token); // Hoặc truyền các tham số riêng lẻ tùy API của bạn
 
       if (checkoutRes && checkoutRes.success === false) {
         throw new Error(checkoutRes.message || 'Không thể tạo đơn hàng thanh toán qua PayOS');
@@ -989,7 +1026,6 @@ export default function EventDetailPage({
         checkoutRes?.data?.paymentTimeout || new Date(Date.now() + 120 * 1000).toISOString();
 
       if (checkoutUrl) {
-        // Lưu cờ step = 'PAYMENT_PROCESSING' & orderCode vào localStorage trước khi chuyển hướng sang PayOS
         const storageKey = `event_reservation_${event.id}`;
         let savedObj = {};
         try {
@@ -1004,11 +1040,11 @@ export default function EventDetailPage({
             ? savedObj.seats
             : isSeated
               ? selectedSeats.map((s) => ({
-                  id: s.id,
-                  seat_number: s.code,
-                  price: s.price,
-                  zone_name: s.tier,
-                }))
+                id: s.id,
+                seat_number: s.code,
+                price: s.price,
+                zone_name: s.tier,
+              }))
               : reservedZoneSeats;
 
         localStorage.setItem(
@@ -1153,6 +1189,12 @@ export default function EventDetailPage({
       {/* TAB: BOOKING - Bước 1: Chọn vé */}
       {activeTab === 'booking' && bookingStep === 'booking' && (
         <div className="booking-layout-grid">
+          {/* Gọi component Modal và truyền props */}
+          <CustomerInfoModal
+            isOpen={isPaymentModalOpen}
+            onClose={() => setIsPaymentModalOpen(false)}
+            onSubmit={handleConfirmPaymentWithInfo}
+          />
           {/* CỘT TRÁI */}
           <div className="glass-panel detail-left-panel">
             {/* Header thông báo */}
@@ -1220,6 +1262,7 @@ export default function EventDetailPage({
             handleReserveSeats={handleReserveSeats}
             handlePayment={handlePayment}
             handleCancelReservation={handleCancelReservation}
+            handlePrePaymentClick={handlePrePaymentClick}
           />
         </div>
       )}

@@ -393,14 +393,15 @@ export async function cancelOrder(orderCode, token) {
 /**
  * Bắt đầu thanh toán PayOS (Route: POST /api/seats/start-checkout)
  */
-export async function startCheckout(seatIds, returnUrl, cancelUrl, token) {
+export async function startCheckout(checkoutPayload, token) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+
 
   const res = await fetch(`${API_BASE_URL}/seats/start-checkout`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ seatIds, returnUrl, cancelUrl }),
+    body: JSON.stringify(checkoutPayload), // Gửi thẳng object payload lên
   });
   return res.json();
 }

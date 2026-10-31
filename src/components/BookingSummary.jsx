@@ -23,6 +23,7 @@ export default function BookingSummary({
   handleReserveSeats,
   handlePayment,
   handleCancelReservation,
+  handlePrePaymentClick 
 }) {
   return (
     <div className="glass-panel booking-summary-panel">
@@ -97,7 +98,7 @@ export default function BookingSummary({
       <div>
         {/* Nút chính (Giữ chỗ hoặc Thanh toán) */}
         <button
-          onClick={isReserved ? handlePayment : handleReserveSeats}
+          onClick={isReserved ? handlePrePaymentClick : handleReserveSeats}
           disabled={!hasSelections || isProcessingPayment || isUpcoming}
           className="glow-btn-pink booking-main-btn"
         >
