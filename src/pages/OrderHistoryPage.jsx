@@ -398,11 +398,8 @@ export default function OrderHistoryPage({
                           Đơn hàng đang chờ hoàn tiền (Refund Pending)
                         </div>
                         <div className="oh-refund-alert-desc">
-                          Giao dịch chuyển khoản của bạn được thực hiện sau khi đơn đã hủy hoặc hết
-                          hạn, và vị trí ghế này hiện đã có người khác giữ/mua. Khoản tiền{' '}
-                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> của bạn đã
-                          được hệ thống ghi nhận an toàn và đang chờ Quản trị viên hoàn trả lại về
-                          tài khoản ngân hàng.
+                          Đơn đã hủy hoặc quá hạn thanh toán. Khoản tiền{' '}
+                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> đã được ghi nhận an toàn và đang chờ hoàn lại cho bạn.
                         </div>
                       </div>
                     </div>

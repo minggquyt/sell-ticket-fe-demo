@@ -510,7 +510,7 @@ export default function EventDetailPage({
             reloadBackendSeats();
             if (onRefreshOrders) onRefreshOrders();
             toast.warning(
-              `Đơn #${orderData.orderCode} được thanh toán sau khi đã hủy/hết hạn và ghế đã có người khác chọn. Khoản tiền đã chuyển sang trạng thái Chờ hoàn tiền (Refund)!`,
+              `Đơn #${orderData.orderCode} thanh toán sau khi hết hạn/hủy. Đã chuyển sang Chờ hoàn tiền!`,
             );
           } else {
             // Đơn chưa thanh toán: tiến hành hủy giữ chỗ trên Backend & đóng link PayOS
@@ -580,7 +580,7 @@ export default function EventDetailPage({
           reloadBackendSeats();
           if (onRefreshOrders) onRefreshOrders();
           toast.warning(
-            `Hệ thống ghi nhận bạn vừa chuyển khoản cho đơn #${orderData.orderCode} sau khi đã hủy/hết hạn, nhưng ghế đã có người khác giữ/mua. Đơn đã được chuyển sang Chờ hoàn tiền (Refund)!`,
+            `Đơn #${orderData.orderCode} thanh toán sau khi hết hạn/hủy. Đã chuyển sang Chờ hoàn tiền!`,
           );
         }
       } catch {
@@ -766,7 +766,7 @@ export default function EventDetailPage({
                   reloadBackendSeats();
                   if (onRefreshOrders) onRefreshOrders();
                   toast.warning(
-                    `Đơn #${orderData.orderCode} được thanh toán muộn khi ghế đã có người khác chọn và đã chuyển sang trạng thái Chờ hoàn tiền!`,
+                    `Đơn #${orderData.orderCode} thanh toán sau khi hết hạn/hủy. Đã chuyển sang Chờ hoàn tiền!`,
                   );
                 } else {
                   setRecentPendingOrderCode(parsedData.orderCode);

@@ -71,8 +71,7 @@ export default function AdminRefundsTab({
           </div>
           <h1 className="atk-title">Quản lý Hoàn tiền (Refund)</h1>
           <p className="atk-sub">
-            Danh sách các đơn khách chuyển khoản sau khi đã hủy/hết hạn mà vị trí ghế đã có người
-            khác chọn. Sau khi chuyển khoản hoàn tiền thủ công cho khách, bấm{' '}
+            Danh sách đơn thanh toán sau khi đã hủy hoặc hết hạn. Sau khi chuyển khoản hoàn tiền thủ công cho khách, bấm{' '}
             <strong>Xác nhận đã hoàn tiền</strong> để cập nhật hệ thống.
           </p>
         </div>
