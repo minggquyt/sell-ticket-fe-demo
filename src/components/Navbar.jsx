@@ -66,15 +66,13 @@ export default function Navbar({
               <Compass size={16} />
               Khám phá Sự kiện
             </button>
-            {user && (
-              <button
-                onClick={() => (onOpenCart ? onOpenCart() : onNavigate('my-tickets'))}
-                className={`nav-explore-btn${currentRoute === 'my-tickets' ? ' active' : ''}`}
-              >
-                <Ticket size={16} />
-                Lịch sử đặt vé
-              </button>
-            )}
+            <button
+              onClick={() => (onOpenCart ? onOpenCart() : onNavigate('my-tickets'))}
+              className={`nav-explore-btn${currentRoute === 'my-tickets' ? ' active' : ''}`}
+            >
+              <Ticket size={16} />
+              {user ? 'Lịch sử đặt vé' : 'Tra cứu vé'}
+            </button>
           </nav>
         )}
 

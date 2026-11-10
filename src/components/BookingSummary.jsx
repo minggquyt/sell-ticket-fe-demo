@@ -1,5 +1,6 @@
 import { AlertTriangle, CreditCard, Timer, X } from 'lucide-react';
 import { formatVND } from '../utils/format.js';
+import GuestCheckoutForm from './GuestCheckoutForm.jsx';
 import './BookingSummary.css';
 
 // Panel tóm tắt đặt vé bên phải trang chi tiết (tách từ EventDetailPage ở Phần 3d):
@@ -19,6 +20,9 @@ export default function BookingSummary({
   isProcessingPayment,
   isUpcoming,
   user,
+  guest,
+  onGuestChange,
+  guestErrors,
   singleSeatTier,
   handleReserveSeats,
   handlePayment,
@@ -90,10 +94,12 @@ export default function BookingSummary({
       </div>
 
       {!user && (
-        <div className="booking-login-warn">
-          <AlertTriangle size={15} className="booking-icon-fixed" />
-          <span>Bạn cần đăng nhập để hoàn tất giữ chỗ và nhận vé qua email.</span>
-        </div>
+        <GuestCheckoutForm
+          guest={guest || { email: '', fullName: '', phone: '' }}
+          onGuestChange={onGuestChange}
+          disabled={isReserved}
+          errors={guestErrors || {}}
+        />
       )}
       <div>
         {/* Nút chính (Giữ chỗ hoặc Thanh toán) */}
@@ -117,11 +123,7 @@ export default function BookingSummary({
             <div className="booking-pay-wrap">
               <div className="booking-btn-row booking-btn-row-wrap">
                 <CreditCard size={18} className="booking-icon-fixed" />
-                <span>
-                  {user
-                    ? `Thanh toán qua PayOS • ${formatVND(totalPrice)}`
-                    : 'Đăng nhập & Thanh toán'}
-                </span>
+                <span>{`Thanh toán qua PayOS • ${formatVND(totalPrice)}`}</span>
               </div>
               <span className="booking-countdown">
                 <Timer size={12} /> Giữ ghế thành công! Hết hạn sau:{' '}
@@ -132,7 +134,7 @@ export default function BookingSummary({
             // TRẠNG THÁI 1: CHƯA GIỮ GHẾ -> HIỂN THỊ NÚT GIỮ GHẾ
             <div className="booking-btn-row booking-btn-row-wrap">
               <CreditCard size={18} className="booking-icon-fixed" />
-              <span>{user ? 'Giữ chỗ ngay' : 'Đăng nhập & Giữ chỗ'}</span>
+              <span>Giữ chỗ ngay</span>
             </div>
           )}
         </button>

@@ -731,3 +731,102 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+/* Tra cứu vé cho khách mua vé không cần đăng nhập (guest checkout, 10/11/2026). */
+.oh-lookup-form {
+  width: 100%;
+  margin-top: 18px;
+  text-align: left;
+}
+
+.oh-lookup-row {
+  display: flex;
+  gap: 10px;
+}
+
+.oh-lookup-input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  outline: none;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-main, #fff);
+  font-size: 14px;
+}
+
+.oh-lookup-input:focus {
+  border-color: var(--primary-light, #818cf8);
+}
+
+.oh-lookup-input::placeholder {
+  color: var(--text-dim, #94a3b8);
+}
+
+.oh-lookup-error {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #fca5a5;
+}
+
+.oh-lookup-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.oh-lookup-result {
+  width: 100%;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.08);
+  text-align: left;
+}
+
+.oh-lookup-result-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.oh-lookup-result-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent-emerald);
+}
+
+.oh-lookup-result-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main, #fff);
+}
+
+.oh-lookup-result-sub {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--text-dim, #94a3b8);
+}
+
+.oh-lookup-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.oh-lookup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+@media (max-width: 640px) {
+  .oh-lookup-row {
+    flex-direction: column;
+  }
+}

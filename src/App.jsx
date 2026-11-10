@@ -59,6 +59,7 @@ function EventDetailRoute({
   onPaymentSuccess,
   onBack,
   onRequireLogin,
+  onClaimAccount,
   onAddToCart,
   onOpenCart,
   onRefreshOrders,
@@ -88,6 +89,7 @@ function EventDetailRoute({
       onPaymentSuccess={onPaymentSuccess}
       onBack={onBack}
       onRequireLogin={onRequireLogin}
+      onClaimAccount={onClaimAccount}
       onAddToCart={onAddToCart}
       onOpenCart={onOpenCart}
       onRefreshOrders={onRefreshOrders}
@@ -249,6 +251,13 @@ function AppShell() {
     }
     if (isAdminUser(userData)) {
       navigate('/admin');
+    } else if (sessionStorage.getItem('sellticket_after_login') === 'my-tickets') {
+      try {
+        sessionStorage.removeItem('sellticket_after_login');
+      } catch {
+        /* Bỏ qua: trình duyệt chặn sessionStorage */
+      }
+      navigate('/my-tickets');
     } else if (lastViewedEventId) {
       navigateTo('detail', lastViewedEventId);
     } else {
@@ -439,6 +448,9 @@ function AppShell() {
                 onPaymentSuccess={handlePaymentSuccess}
                 onBack={() => navigateTo('events')}
                 onRequireLogin={() => navigateTo('login')}
+                onClaimAccount={(email) =>
+                  navigate(`/login?mode=claim&email=${encodeURIComponent(email)}`)
+                }
                 onAddToCart={handleAddToCart}
                 onOpenCart={() => navigateTo('my-tickets')}
                 onRefreshOrders={() => loadUserOrders(null, true)}
@@ -457,6 +469,9 @@ function AppShell() {
                 onSelectEvent={(eventId) => navigateTo('detail', eventId)}
                 onBack={() => navigateTo('events')}
                 onRequireLogin={() => navigateTo('login')}
+                onClaimAccount={(email) =>
+                  navigate(`/login?mode=claim&email=${encodeURIComponent(email)}`)
+                }
               />
             }
           />
