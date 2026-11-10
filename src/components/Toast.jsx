@@ -13,9 +13,23 @@ const TOAST_ICONS = {
 // Lỗi để lâu hơn (6s) để kịp đọc, các loại còn lại 4s
 const TOAST_DURATIONS = { success: 4000, warning: 4000, info: 4000, error: 6000 };
 const MAX_TOASTS = 3;
+const MAX_HISTORY = 40;
+const HISTORY_KEY = 'sellticket_toast_history';
+const READ_KEY = 'sellticket_notif_read';
+
+const loadJson = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+};
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const [history, setHistory] = useState(() => loadJson(HISTORY_KEY, []));
+  const [readIds, setReadIds] = useState(() => loadJson(READ_KEY, []));
   const idRef = useRef(0);
 
   const dismiss = useCallback((id) => {
@@ -29,21 +43,78 @@ export function ToastProvider({ children }) {
     (type, message) => {
       idRef.current += 1;
       const id = idRef.current;
+      const histItem = {
+        id: `toast-${Date.now()}-${id}`,
+        type,
+        message: String(message || ''),
+        createdAt: new Date().toISOString(),
+      };
+
       setToasts((prev) => {
         const next = [...prev, { id, type, message, leaving: false }];
         // Chồng tối đa MAX_TOASTS: thừa thì bỏ cái cũ nhất
         return next.length > MAX_TOASTS ? next.slice(next.length - MAX_TOASTS) : next;
       });
+
+      setHistory((prev) => {
+        const next = [histItem, ...prev].slice(0, MAX_HISTORY);
+        try {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+        } catch {
+          // ignore storage quota error
+        }
+        return next;
+      });
+
       setTimeout(() => dismiss(id), TOAST_DURATIONS[type] || 4000);
     },
     [dismiss],
   );
+
+  const markRead = useCallback((notifId) => {
+    setReadIds((prev) => {
+      if (prev.includes(notifId)) return prev;
+      const next = [...prev, notifId];
+      try {
+        localStorage.setItem(READ_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const markAllRead = useCallback((ids = []) => {
+    setReadIds((prev) => {
+      const merged = Array.from(new Set([...prev, ...ids]));
+      try {
+        localStorage.setItem(READ_KEY, JSON.stringify(merged));
+      } catch {
+        // ignore
+      }
+      return merged;
+    });
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    setHistory([]);
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const toast = {
     success: (message) => push('success', message),
     error: (message) => push('error', message),
     warning: (message) => push('warning', message),
     info: (message) => push('info', message),
+    history,
+    readIds,
+    markRead,
+    markAllRead,
+    clearHistory,
   };
 
   return (

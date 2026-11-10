@@ -401,3 +401,16 @@
     display: none !important;
   }
 }
+
+
+/* Nút Chuông thông báo khẩn cấp */
+.nav-cart-btn.has-urgent {
+  background-color: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+}
+.nav-cart-badge.urgent {
+  background-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.75);
+}

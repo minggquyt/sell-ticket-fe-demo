@@ -8,8 +8,12 @@ import {
   Tag,
   LayoutGrid,
   Table as TableIcon,
+  QrCode,
+  AlertTriangle,
+  Landmark,
 } from 'lucide-react';
 import { formatVND } from '../utils/format.js';
+import RefundQrModal from './RefundQrModal.jsx';
 import './AdminTicketsTab.css';
 
 export default function AdminRefundsTab({
@@ -19,10 +23,11 @@ export default function AdminRefundsTab({
   isLoadingRefunds,
   loadRefunds,
   onConfirmRefund,
+  onMarkBankError,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'REFUND_PENDING' | 'REFUNDED'
-  const [confirmingCode, setConfirmingCode] = useState(null);
+  const [qrModalOrder, setQrModalOrder] = useState(null);
 
   const getStatus = (o) => o?.status || o?.orderStatus || '';
   const pendingCount = refundOrders.filter((o) => getStatus(o) === 'REFUND_PENDING').length;
@@ -51,14 +56,11 @@ export default function AdminRefundsTab({
     return matchSearch && matchStatus;
   });
 
-  const handleConfirm = async (orderCode) => {
-    if (!onConfirmRefund) return;
-    setConfirmingCode(orderCode);
-    try {
-      await onConfirmRefund(orderCode);
-    } finally {
-      setConfirmingCode(null);
-    }
+  const getRefundState = (ord) => {
+    if (ord.status === 'REFUNDED') return 'refunded';
+    if (!ord.refundBank) return 'no-bank';
+    if (ord.refundBankError) return 'bank-error';
+    return 'ready';
   };
 
   return (
@@ -167,6 +169,7 @@ export default function AdminRefundsTab({
               const createdStr = ord.createdAt
                 ? new Date(ord.createdAt).toLocaleString('vi-VN')
                 : '';
+              const refundState = getRefundState(ord);
 
               return (
                 <div key={ord.orderCode} className="glass-panel atk-ticket-card">
@@ -200,31 +203,66 @@ export default function AdminRefundsTab({
                     </div>
                     <div>
                       <div className="atk-info-label">
-                        <Tag size={13} /> Ghế bị trùng
+                        <Tag size={13} /> Ghế
                       </div>
                       <div className="atk-info-value-main">{seatsDisplay}</div>
                       <div className="atk-info-sub">{ord.eventLocation || ''}</div>
                     </div>
                   </div>
 
+                  {/* Thông tin TK ngân hàng hoặc lý do lỗi */}
+                  {refundState === 'no-bank' && (
+                    <div className="atk-bank-status atk-bank-status-warn">
+                      <AlertTriangle size={14} />
+                      <span>Khách chưa cập nhật TK ngân hàng</span>
+                    </div>
+                  )}
+                  {refundState === 'bank-error' && (
+                    <div className="atk-bank-status atk-bank-status-error">
+                      <AlertTriangle size={14} />
+                      <span>Sai TT ngân hàng: {ord.refundBankError}</span>
+                    </div>
+                  )}
+                  {(refundState === 'ready' || refundState === 'refunded') &&
+                    (ord.refundSnapshot || ord.refundBank) && (
+                      <div className="atk-bank-status atk-bank-status-ok">
+                        <Landmark size={14} />
+                        <span>
+                          {(ord.refundSnapshot || ord.refundBank).bankShortName} -{' '}
+                          {(ord.refundSnapshot || ord.refundBank).bankAccountNo}
+                        </span>
+                      </div>
+                    )}
+
                   <div className="atk-card-footer">
                     <div>
-                      <div className="atk-total-label">Số tiền cần hoàn</div>
+                      <div className="atk-total-label">Số tiền hoàn</div>
                       <div className="atk-total-value">
                         {formatVND(Number(ord.totalAmount) || 0)}
                       </div>
                     </div>
 
                     {ord.status === 'REFUND_PENDING' ? (
+                      refundState === 'ready' ? (
+                        <button
+                          onClick={() => setQrModalOrder(ord)}
+                          className="atk-refund-confirm-btn"
+                        >
+                          <QrCode size={15} />
+                          Quét QR hoàn tiền
+                        </button>
+                      ) : (
+                        <span className="atk-done-chip" style={{ fontSize: 11 }}>
+                          Chờ khách cập nhật TK
+                        </span>
+                      )
+                    ) : ord.refundSnapshot ? (
                       <button
-                        onClick={() => handleConfirm(ord.orderCode)}
-                        disabled={confirmingCode === ord.orderCode}
+                        onClick={() => setQrModalOrder(ord)}
                         className="atk-refund-confirm-btn"
                       >
                         <CheckCircle2 size={15} />
-                        {confirmingCode === ord.orderCode
-                          ? 'Đang lưu...'
-                          : 'Xác nhận đã hoàn tiền'}
+                        Xem đối soát
                       </button>
                     ) : (
                       <span className="atk-done-chip">✓ Đã hoàn tiền xong</span>
@@ -250,6 +288,7 @@ export default function AdminRefundsTab({
                     <th className="atk-th atk-th-w220">KHÁCH HÀNG</th>
                     <th className="atk-th atk-th-w200">GHẾ / VỊ TRÍ</th>
                     <th className="atk-th atk-th-w140">SỐ TIỀN HOÀN</th>
+                    <th className="atk-th atk-th-w240">TK NGÂN HÀNG</th>
                     <th className="atk-th atk-th-w150">TRẠNG THÁI</th>
                     <th className="atk-th atk-th-w200 atk-th-right">THAO TÁC ADMIN</th>
                   </tr>
@@ -257,13 +296,13 @@ export default function AdminRefundsTab({
                 <tbody>
                   {isLoadingRefunds ? (
                     <tr>
-                      <td colSpan="7" className="atk-empty-cell">
+                      <td colSpan="8" className="atk-empty-cell">
                         Đang tải danh sách đơn hoàn tiền từ cơ sở dữ liệu...
                       </td>
                     </tr>
                   ) : filteredRefunds.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="atk-empty-cell">
+                      <td colSpan="8" className="atk-empty-cell">
                         Hiện không có đơn hàng nào thuộc diện chờ hoàn tiền hoặc đã hoàn tiền.
                       </td>
                     </tr>
@@ -278,6 +317,7 @@ export default function AdminRefundsTab({
                       const createdStr = ord.createdAt
                         ? new Date(ord.createdAt).toLocaleString('vi-VN')
                         : '';
+                      const refundState = getRefundState(ord);
 
                       return (
                         <tr key={ord.orderCode} className="atk-row">
@@ -308,6 +348,30 @@ export default function AdminRefundsTab({
                             </div>
                           </td>
                           <td className="atk-cell">
+                            {refundState === 'no-bank' && (
+                              <div className="atk-bank-status atk-bank-status-warn">
+                                <AlertTriangle size={13} />
+                                <span>Chưa có TK</span>
+                              </div>
+                            )}
+                            {refundState === 'bank-error' && (
+                              <div className="atk-bank-status atk-bank-status-error">
+                                <AlertTriangle size={13} />
+                                <span title={ord.refundBankError}>Sai TT TK</span>
+                              </div>
+                            )}
+                            {(refundState === 'ready' || refundState === 'refunded') &&
+                              (ord.refundSnapshot || ord.refundBank) && (
+                                <div className="atk-bank-status atk-bank-status-ok">
+                                  <Landmark size={13} />
+                                  <span>
+                                    {(ord.refundSnapshot || ord.refundBank).bankShortName} -{' '}
+                                    {(ord.refundSnapshot || ord.refundBank).bankAccountNo}
+                                  </span>
+                                </div>
+                              )}
+                          </td>
+                          <td className="atk-cell">
                             {ord.status === 'REFUND_PENDING' ? (
                               <span className="atk-status-badge atk-status-badge-table refund-pending">
                                 Chờ hoàn tiền
@@ -320,15 +384,26 @@ export default function AdminRefundsTab({
                           </td>
                           <td className="atk-cell atk-cell-right">
                             {ord.status === 'REFUND_PENDING' ? (
+                              refundState === 'ready' ? (
+                                <button
+                                  onClick={() => setQrModalOrder(ord)}
+                                  className="atk-refund-confirm-btn"
+                                >
+                                  <QrCode size={14} />
+                                  Quét QR hoàn tiền
+                                </button>
+                              ) : (
+                                <span className="atk-done-text" style={{ fontSize: 11 }}>
+                                  Chờ khách cập nhật TK
+                                </span>
+                              )
+                            ) : ord.refundSnapshot ? (
                               <button
-                                onClick={() => handleConfirm(ord.orderCode)}
-                                disabled={confirmingCode === ord.orderCode}
+                                onClick={() => setQrModalOrder(ord)}
                                 className="atk-refund-confirm-btn"
                               >
                                 <CheckCircle2 size={14} />
-                                {confirmingCode === ord.orderCode
-                                  ? 'Đang lưu...'
-                                  : 'Xác nhận đã hoàn tiền'}
+                                Xem đối soát
                               </button>
                             ) : (
                               <span className="atk-done-text">✓ Đã hoàn tất</span>
@@ -344,6 +419,18 @@ export default function AdminRefundsTab({
           </div>
         </div>
       )}
+
+      <RefundQrModal
+        isOpen={Boolean(qrModalOrder)}
+        order={qrModalOrder}
+        onConfirm={async (payload) => {
+          if (onConfirmRefund) await onConfirmRefund(qrModalOrder.orderCode, payload);
+        }}
+        onMarkError={async (reason) => {
+          if (onMarkBankError) await onMarkBankError(qrModalOrder.orderCode, reason);
+        }}
+        onClose={() => setQrModalOrder(null)}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   fetchAdminTickets,
   fetchAdminRefunds,
   confirmOrderRefundOnBackend,
+  markRefundBankErrorOnBackend,
   fetchSeatsByEvent,
 } from '../services/eventService';
 import { useToast } from '../components/toastContext.js';
@@ -86,17 +87,35 @@ export default function AdminPage({
     }
   };
 
-  const handleConfirmRefund = async (orderCode) => {
+  const handleConfirmRefund = async (orderCode, payload) => {
     try {
-      await confirmOrderRefundOnBackend(orderCode, user?.token);
+      const updated = await confirmOrderRefundOnBackend(orderCode, payload, user?.token);
       setRefundsList((prev) =>
         prev.map((o) =>
-          String(o.orderCode) === String(orderCode) ? { ...o, status: 'REFUNDED' } : o,
+          String(o.orderCode) === String(orderCode)
+            ? { ...o, status: 'REFUNDED', refundSnapshot: updated?.refundSnapshot || o.refundSnapshot }
+            : o,
         ),
       );
       toast.success(`Đã xác nhận hoàn tiền thành công cho đơn #${orderCode}!`);
     } catch (err) {
       toast.error(err.message || 'Không thể xác nhận hoàn tiền cho đơn này.');
+    }
+  };
+
+  const handleMarkBankError = async (orderCode, reason) => {
+    try {
+      await markRefundBankErrorOnBackend(orderCode, reason, user?.token);
+      setRefundsList((prev) =>
+        prev.map((o) =>
+          String(o.orderCode) === String(orderCode)
+            ? { ...o, refundBankError: reason }
+            : o,
+        ),
+      );
+      toast.warning(`Đã báo sai thông tin TK cho đơn #${orderCode}.`);
+    } catch (err) {
+      toast.error(err.message || 'Không thể báo sai thông tin tài khoản.');
     }
   };
 
@@ -697,6 +716,7 @@ export default function AdminPage({
               isLoadingRefunds={isLoadingRefunds}
               loadRefunds={loadRefunds}
               onConfirmRefund={handleConfirmRefund}
+              onMarkBankError={handleMarkBankError}
             />
           )}
         </main>

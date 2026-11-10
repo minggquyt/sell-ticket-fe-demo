@@ -7,6 +7,8 @@ import {
   Menu,
   X,
   ChevronDown,
+  Landmark,
+  Bell,
 } from 'lucide-react';
 import './Navbar.css';
 
@@ -17,6 +19,8 @@ export default function Navbar({
   onLogout,
   cart = [],
   onOpenCart,
+  unreadNotifCount = 0,
+  hasUrgentNotif = false,
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -80,6 +84,28 @@ export default function Navbar({
 
         {/* User Profile / Login Action & Lịch sử đặt vé */}
         <div className="navbar-actions">
+          {/* Nút Chuông Thông báo có đếm số chưa đọc */}
+          {user && (
+            <button
+              onClick={() => onNavigate('notifications')}
+              title={`Thông báo (${unreadNotifCount} chưa đọc)`}
+              className={`nav-cart-btn${
+                hasUrgentNotif
+                  ? ' has-urgent'
+                  : unreadNotifCount > 0 || currentRoute === 'notifications'
+                    ? ' has-items'
+                    : ''
+              }`}
+            >
+              <Bell size={19} />
+              {unreadNotifCount > 0 && (
+                <span className={`nav-cart-badge${hasUrgentNotif ? ' urgent' : ''}`}>
+                  {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Quick Ticket History Access Button (Accessible on both mobile and desktop) */}
           <button
             onClick={onOpenCart}
@@ -131,6 +157,26 @@ export default function Navbar({
                     </div>
                   </div>
 
+                  {/* Mục Trung tâm Thông báo */}
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onNavigate('notifications');
+                    }}
+                    className="nav-dropdown-item"
+                  >
+                    <Bell size={17} color={hasUrgentNotif ? '#f87171' : 'var(--accent-amber)'} />
+                    <div className="nav-dropdown-item-main">
+                      <div className="nav-dropdown-cart-row">
+                        <span>Thông báo</span>
+                        {unreadNotifCount > 0 && (
+                          <span className="nav-cart-count-badge">{unreadNotifCount} mới</span>
+                        )}
+                      </div>
+                      <div className="nav-dropdown-item-sub">Cảnh báo TK ngân hàng &amp; hoàn tiền</div>
+                    </div>
+                  </button>
+
                   {/* Mục Lịch sử đặt vé */}
                   <button
                     onClick={() => {
@@ -148,6 +194,21 @@ export default function Navbar({
                         )}
                       </div>
                       <div className="nav-dropdown-item-sub">Xem lại vé E-Ticket & giao dịch</div>
+                    </div>
+                  </button>
+
+                  {/* Mục Hồ sơ & Ngân hàng nhận hoàn tiền */}
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onNavigate('profile');
+                    }}
+                    className="nav-dropdown-item"
+                  >
+                    <Landmark size={17} color="var(--accent-amber)" />
+                    <div className="nav-dropdown-item-main">
+                      <span>Hồ sơ &amp; Ngân hàng</span>
+                      <div className="nav-dropdown-item-sub">TK nhận hoàn tiền</div>
                     </div>
                   </button>
 
@@ -207,6 +268,26 @@ export default function Navbar({
             </button>
           )}
 
+          {user && (
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onNavigate('notifications');
+              }}
+              className={`nav-mobile-item nav-mobile-item-between${currentRoute === 'notifications' ? ' active' : ''}`}
+            >
+              <div className="nav-mobile-cart-left">
+                <Bell size={18} color="var(--accent-amber)" />
+                <span>Thông báo</span>
+              </div>
+              {unreadNotifCount > 0 && (
+                <span className="nav-cart-count-badge nav-cart-count-badge-lg">
+                  {unreadNotifCount} mới
+                </span>
+              )}
+            </button>
+          )}
+
           <button
             onClick={() => {
               setMobileMenuOpen(false);
@@ -222,6 +303,19 @@ export default function Navbar({
               <span className="nav-cart-count-badge nav-cart-count-badge-lg">{paidCount} đơn</span>
             )}
           </button>
+
+          {user && (
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onNavigate('profile');
+              }}
+              className={`nav-mobile-item${currentRoute === 'profile' ? ' active' : ''}`}
+            >
+              <Landmark size={18} color="var(--accent-amber)" />
+              Hồ sơ &amp; Ngân hàng
+            </button>
+          )}
 
           {user ? (
             <button

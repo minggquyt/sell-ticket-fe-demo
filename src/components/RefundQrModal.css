@@ -1,0 +1,243 @@
+/* Modal Quét QR hoàn tiền Admin: tái dùng .modal-overlay/.modal-btn/.modal-label/.modal-input có sẵn */
+.rqm-modal {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  max-width: 720px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-subtle);
+  border: 1px solid var(--border-color);
+  position: relative;
+  padding: 24px;
+}
+.rqm-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.rqm-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+}
+.rqm-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+.rqm-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.rqm-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.rqm-body {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+.rqm-qr-col {
+  flex-shrink: 0;
+  text-align: center;
+}
+.rqm-qr-img {
+  width: 240px;
+  height: 240px;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 8px;
+}
+.rqm-amount {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--accent-pink);
+  margin-top: 8px;
+}
+.rqm-content {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.rqm-info-col {
+  flex: 1;
+}
+.rqm-info-title {
+  font-size: 14px;
+  font-weight: 800;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-cyan);
+}
+.rqm-info-row {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.rqm-info-label {
+  min-width: 140px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.rqm-info-value {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rqm-info-highlight {
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 6px;
+  padding: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  margin-top: 8px;
+}
+.rqm-info-name {
+  color: #fde68a;
+  font-size: 14px;
+}
+.rqm-bank-logo {
+  width: 32px;
+  height: 16px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 3px;
+}
+.rqm-copy-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.rqm-copy-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--primary-light);
+}
+.rqm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+.rqm-btn-confirm {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(16, 185, 129, 0.3));
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rqm-btn-confirm:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.4);
+  border-color: var(--accent-emerald);
+  color: #fff;
+}
+.rqm-btn-confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.rqm-btn-error-trigger {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rqm-btn-error-trigger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #f87171;
+}
+.rqm-error-form {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+}
+.rqm-error-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #fecaca;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rqm-error-hint {
+  font-size: 12px;
+  color: #fca5a5;
+  margin-bottom: 10px;
+}
+.rqm-error-textarea {
+  resize: vertical;
+  min-height: 50px;
+}
+.rqm-error-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.rqm-btn-error {
+  background: rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fecaca;
+  font-weight: 800;
+}
+.rqm-btn-error:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.4);
+  border-color: #f87171;
+}
+.rqm-btn-error:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.rqm-error-state {
+  text-align: center;
+  padding: 32px 24px;
+}
+.rqm-error-state h3 {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 12px 0 8px;
+}
+.rqm-error-state p {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .rqm-modal {
+    width: 95%;
+    padding: 20px;
+  }
+  .rqm-body {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .rqm-qr-img {
+    width: 200px;
+    height: 200px;
+  }
+}

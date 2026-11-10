@@ -5,6 +5,9 @@ import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
 import OrderHistoryPage from './pages/OrderHistoryPage';
 import AdminPage from './pages/AdminPage';
+import ProfilePage from './pages/ProfilePage';
+import NotificationsPage from './pages/NotificationsPage';
+import { buildNotifications } from './utils/format.js';
 import {
   fetchEvents,
   fetchSeatsByEvent,
@@ -98,7 +101,15 @@ function EventDetailRoute({
 function AppShell() {
   const [eventsList, setEventsList] = useState([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('sellticket_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (e) {
+      console.warn('L?i ??c user t? localStorage:', e);
+      return null;
+    }
+  });
   const [cart, setCart] = useState([]); // Danh sách toàn bộ đơn đặt vé từ Database (Lịch sử đặt vé)
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
@@ -121,7 +132,11 @@ function AppShell() {
         ? 'admin'
         : location.pathname === '/my-tickets'
           ? 'my-tickets'
-          : urlEventId
+          : location.pathname === '/profile'
+            ? 'profile'
+            : location.pathname === '/notifications'
+              ? 'notifications'
+              : urlEventId
             ? 'detail'
             : 'events';
 
@@ -132,19 +147,6 @@ function AppShell() {
   }
 
   const toast = useToast();
-
-  // Khôi phục phiên đăng nhập từ localStorage
-  useEffect(() => {
-    try {
-      const savedUser = localStorage.getItem('sellticket_user');
-      if (savedUser) {
-        const parsed = JSON.parse(savedUser);
-        setUser(parsed);
-      }
-    } catch (e) {
-      console.warn('Lỗi đọc user từ localStorage:', e);
-    }
-  }, []);
 
   // Tải lịch sử đặt vé của người dùng từ Database (GET /api/orders/my-history)
   const loadUserOrders = useCallback(
@@ -179,11 +181,9 @@ function AppShell() {
   );
 
   useEffect(() => {
-    if (user?.token) {
-      loadUserOrders(user.token, false);
-    } else {
-      setCart([]);
-    }
+    if (!user?.token) return;
+    const timer = setTimeout(() => loadUserOrders(user.token, false), 0);
+    return () => clearTimeout(timer);
   }, [user?.token, loadUserOrders]);
 
   // Tải danh sách sự kiện từ Backend
@@ -214,12 +214,16 @@ function AppShell() {
 
   // Tự động kiểm tra và đồng bộ lại định kỳ mỗi 10 giây (ngầm, không nháy màn hình)
   useEffect(() => {
-    loadEvents(false);
+    const initTimer = setTimeout(() => loadEvents(false), 0);
     const interval = setInterval(() => {
       loadEvents(true);
+      if (user?.token) loadUserOrders(user.token, true);
     }, 10000);
-    return () => clearInterval(interval);
-  }, [loadEvents]);
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(interval);
+    };
+  }, [loadEvents, loadUserOrders, user?.token]);
 
   // Điều hướng chuyển trang
   const navigateTo = (route, eventId = null) => {
@@ -233,6 +237,10 @@ function AppShell() {
       navigate('/admin');
     } else if (route === 'my-tickets') {
       navigate('/my-tickets');
+    } else if (route === 'profile') {
+      navigate('/profile#bank');
+    } else if (route === 'notifications') {
+      navigate('/notifications');
     } else if (route === 'detail' && eventId) {
       navigate(`/events/${eventId}`);
     } else {
@@ -407,6 +415,8 @@ function AppShell() {
   }
 
   // GIAO DIỆN DÀNH CHO KHÁCH HÀNG / NGƯỜI DÙNG THƯỜNG
+  const notifications = buildNotifications(cart, toast.history, toast.readIds);
+
   return (
     <div className="app-shell">
       <ScrollToTop />
@@ -419,6 +429,8 @@ function AppShell() {
         onLogout={handleLogout}
         cart={cart}
         onOpenCart={() => navigateTo('my-tickets')}
+        unreadNotifCount={notifications.filter((n) => !n.isRead).length}
+        hasUrgentNotif={notifications.some((n) => !n.isRead && n.urgent)}
       />
 
       {/* Main View Router — React Router (H2) */}
@@ -457,6 +469,31 @@ function AppShell() {
                 onSelectEvent={(eventId) => navigateTo('detail', eventId)}
                 onBack={() => navigateTo('events')}
                 onRequireLogin={() => navigateTo('login')}
+                onGoToBankProfile={() => navigateTo('profile')}
+              />
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <NotificationsPage
+                user={user}
+                notifications={notifications}
+                onNavigate={(route) => navigateTo(route)}
+                onRefresh={() => loadUserOrders(null, false)}
+                onBack={() => navigateTo('events')}
+                onRequireLogin={() => navigateTo('login')}
+              />
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProfilePage
+                user={user}
+                onBack={() => navigateTo('my-tickets')}
+                onRequireLogin={() => navigateTo('login')}
+                onSaved={() => loadUserOrders(null, true)}
               />
             }
           />

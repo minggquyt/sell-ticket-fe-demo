@@ -487,6 +487,20 @@
   font-size: 12.5px;
   opacity: 0.92;
 }
+.oh-refund-inline-link {
+  background: none;
+  border: none;
+  color: inherit;
+  text-decoration: underline;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  display: inline;
+}
+.oh-refund-inline-link:hover {
+  opacity: 0.85;
+}
 
 /* E-Ticket Drawer */
 .oh-eticket-drawer {

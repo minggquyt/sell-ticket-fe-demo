@@ -29,6 +29,7 @@ export default function OrderHistoryPage({
   onSelectEvent,
   onBack,
   onRequireLogin,
+  onGoToBankProfile,
 }) {
   // 'paid' | 'refund' | 'all' | 'cancelled'
   const [filterTab, setFilterTab] = useState('paid');
@@ -398,14 +399,51 @@ export default function OrderHistoryPage({
                           Đơn hàng đang chờ hoàn tiền (Refund Pending)
                         </div>
                         <div className="oh-refund-alert-desc">
-                          Đơn đã hủy hoặc quá hạn thanh toán. Khoản tiền{' '}
-                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> đã được ghi nhận an toàn và đang chờ hoàn lại cho bạn.
+                          {order.refundBankError ? (
+                            <>
+                              ⚠️ Admin báo thông tin TK của bạn chưa đúng:{' '}
+                              <strong>{order.refundBankError}</strong>.{' '}
+                              {onGoToBankProfile && (
+                                <button
+                                  onClick={onGoToBankProfile}
+                                  className="oh-refund-inline-link"
+                                >
+                                  Vào Hồ sơ sửa lại ngay
+                                </button>
+                              )}
+                            </>
+                          ) : order.refundBank ? (
+                            <>
+                              Đơn đã hủy/quá hạn. Khoản tiền{' '}
+                              <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> đã ghi
+                              nhận và đang chờ hoàn lại vào TK{' '}
+                              <strong>
+                                {order.refundBank.bankShortName} - {order.refundBank.bankAccountNo}
+                              </strong>
+                              .
+                            </>
+                          ) : (
+                            <>
+                              Đơn đã hủy/quá hạn. Khoản{' '}
+                              <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> đã ghi
+                              nhận an toàn, nhưng bạn chưa có TK ngân hàng.{' '}
+                              {onGoToBankProfile && (
+                                <button
+                                  onClick={onGoToBankProfile}
+                                  className="oh-refund-inline-link"
+                                >
+                                  Vào Hồ sơ cập nhật TK ngân hàng
+                                </button>
+                              )}{' '}
+                              để nhận hoàn tiền.
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {currentStatus === 'REFUNDED' && (
+                  {currentStatus === 'REFUNDED' && order.refundSnapshot && (
                     <div className="oh-refund-alert completed">
                       <CheckCircle2 size={18} className="oh-refund-alert-icon" />
                       <div>
@@ -413,9 +451,18 @@ export default function OrderHistoryPage({
                           Đã hoàn tiền thành công (Refunded)
                         </div>
                         <div className="oh-refund-alert-desc">
-                          Quản trị viên đã hoàn trả khoản tiền{' '}
-                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> của đơn hàng
-                          này về tài khoản ngân hàng của bạn.
+                          Admin đã chuyển khoản{' '}
+                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> về TK{' '}
+                          <strong>
+                            {order.refundSnapshot.bankShortName} -{' '}
+                            {order.refundSnapshot.bankAccountNo} (
+                            {order.refundSnapshot.bankAccountName})
+                          </strong>{' '}
+                          lúc{' '}
+                          {order.refundSnapshot.refundedAt
+                            ? new Date(order.refundSnapshot.refundedAt).toLocaleString('vi-VN')
+                            : 'đã xong'}
+                          .
                         </div>
                       </div>
                     </div>
