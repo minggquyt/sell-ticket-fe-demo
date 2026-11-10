@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Ticket,
   Calendar,
@@ -15,9 +15,17 @@ import {
   Armchair,
   Layers,
   RotateCcw,
+  Search,
+  KeyRound,
 } from 'lucide-react';
 import { formatVND } from '../utils/format.js';
 import ETicketModal from '../components/ETicketModal.jsx';
+import {
+  fetchGuestOrder,
+  getLastGuestOrder,
+  getSavedGuest,
+  isValidGuestEmail,
+} from '../services/guestService.js';
 import './OrderHistoryPage.css';
 
 export default function OrderHistoryPage({
@@ -29,10 +37,63 @@ export default function OrderHistoryPage({
   onSelectEvent,
   onBack,
   onRequireLogin,
+  onClaimAccount,
 }) {
   // 'paid' | 'refund' | 'all' | 'cancelled'
   const [filterTab, setFilterTab] = useState('paid');
   const [selectedETicketOrder, setSelectedETicketOrder] = useState(null);
+
+  // Tra cứu vé cho khách mua vé không cần đăng nhập (mã đơn + email).
+  const [lookupCode, setLookupCode] = useState(() => getLastGuestOrder()?.orderCode || '');
+  const [lookupEmail, setLookupEmail] = useState(
+    () => getLastGuestOrder()?.email || getSavedGuest()?.email || '',
+  );
+  const [lookupOrder, setLookupOrder] = useState(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState('');
+
+  const guestStatusLabel = (status) =>
+    ({
+      SUCCESS: 'Đã thanh toán (Có hiệu lực)',
+      REFUND_PENDING: 'Chờ hoàn tiền',
+      REFUNDED: 'Đã hoàn tiền',
+      PAYMENT_PROCESSING: 'Đang chờ thanh toán',
+      CANCELLED: 'Đã hủy giao dịch',
+      EXPIRED: 'Hết hạn thanh toán',
+    })[status] || status;
+
+  const runGuestLookup = async (code, email) => {
+    const cleanCode = String(code || '').trim();
+    if (!cleanCode) {
+      setLookupError('Vui lòng nhập mã đơn hàng.');
+      return;
+    }
+    if (!isValidGuestEmail(email)) {
+      setLookupError('Vui lòng nhập đúng email đã dùng khi mua vé.');
+      return;
+    }
+    setLookupError('');
+    setLookupLoading(true);
+    try {
+      const order = await fetchGuestOrder(cleanCode, email);
+      setLookupOrder(order);
+    } catch (err) {
+      setLookupOrder(null);
+      setLookupError(err.message || 'Không tìm thấy đơn hàng.');
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  // Vừa thanh toán xong ở trang sự kiện thì tự tra cứu lại đơn đó cho khách.
+  // Chạy sau khi mount xong (queueMicrotask) để không setState đồng bộ trong effect.
+  useEffect(() => {
+    const last = getLastGuestOrder();
+    if (!user && last) {
+      queueMicrotask(() => runGuestLookup(last.orderCode, last.email));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!user) {
     return (
@@ -43,9 +104,78 @@ export default function OrderHistoryPage({
           </div>
           <h2 className="order-history-guest-title">Lịch sử đặt vé của bạn</h2>
           <p className="order-history-guest-text">
-            Vui lòng đăng nhập để xem lại toàn bộ danh sách vé điện tử (E-Ticket), trạng thái hoàn
-            tiền và lịch sử giao dịch trên hệ thống.
+            Mua vé mà không cần đăng nhập? Nhập mã đơn hàng và email đã dùng khi mua vé để xem vé
+            điện tử. Muốn xem toàn bộ lịch sử thì đăng nhập, hoặc đặt mật khẩu cho email đó.
           </p>
+
+          <form
+            className="oh-lookup-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              runGuestLookup(lookupCode, lookupEmail);
+            }}
+          >
+            <div className="oh-lookup-row">
+              <input
+                value={lookupCode}
+                onChange={(e) => setLookupCode(e.target.value)}
+                placeholder="Mã đơn hàng"
+                className="oh-lookup-input"
+              />
+              <input
+                type="email"
+                value={lookupEmail}
+                onChange={(e) => setLookupEmail(e.target.value)}
+                placeholder="Email đã dùng khi mua vé"
+                className="oh-lookup-input"
+              />
+            </div>
+            {lookupError && <p className="oh-lookup-error">{lookupError}</p>}
+            <button
+              type="submit"
+              disabled={lookupLoading}
+              className="glow-btn-primary order-history-btn-primary oh-lookup-submit"
+            >
+              <Search size={16} /> {lookupLoading ? 'Đang tra cứu...' : 'Tra cứu vé'}
+            </button>
+          </form>
+
+          {lookupOrder && (
+            <div className="oh-lookup-result">
+              <div className="oh-lookup-result-head">
+                <CheckCircle2 size={18} className="oh-lookup-result-icon" />
+                <div>
+                  <div className="oh-lookup-result-title">
+                    Đơn #{lookupOrder.orderCode} —{' '}
+                    {guestStatusLabel(lookupOrder.status || lookupOrder.orderStatus)}
+                  </div>
+                  <div className="oh-lookup-result-sub">
+                    {lookupOrder.eventTitle || ''}
+                    {lookupOrder.createdAt
+                      ? ` • ${new Date(lookupOrder.createdAt).toLocaleString('vi-VN')}`
+                      : ''}
+                  </div>
+                </div>
+              </div>
+              <div className="oh-lookup-result-actions">
+                <button
+                  onClick={() => setSelectedETicketOrder(lookupOrder)}
+                  className="glow-btn-primary oh-lookup-btn"
+                >
+                  <Ticket size={15} /> Xem vé điện tử
+                </button>
+                <button
+                  onClick={() =>
+                    onClaimAccount ? onClaimAccount(lookupEmail) : onRequireLogin && onRequireLogin()
+                  }
+                  className="order-history-btn-secondary"
+                >
+                  <KeyRound size={15} /> Đặt mật khẩu để xem lại sau này
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="order-history-guest-actions">
             <button onClick={onBack} className="order-history-btn-secondary">
               <ArrowLeft size={16} /> Về trang sự kiện
@@ -55,6 +185,24 @@ export default function OrderHistoryPage({
             </button>
           </div>
         </div>
+
+        <ETicketModal
+          isOpen={Boolean(selectedETicketOrder)}
+          onClose={() => setSelectedETicketOrder(null)}
+          order={selectedETicketOrder}
+          event={
+            selectedETicketOrder
+              ? events.find(
+                  (e) =>
+                    (selectedETicketOrder.eventId &&
+                      String(e.id) === String(selectedETicketOrder.eventId)) ||
+                    (selectedETicketOrder.eventTitle && e.title === selectedETicketOrder.eventTitle),
+                )
+              : null
+          }
+          user={user}
+          onSelectEvent={onSelectEvent}
+        />
       </div>
     );
   }
@@ -398,8 +546,11 @@ export default function OrderHistoryPage({
                           Đơn hàng đang chờ hoàn tiền (Refund Pending)
                         </div>
                         <div className="oh-refund-alert-desc">
-                          Đơn đã hủy hoặc quá hạn thanh toán. Khoản tiền{' '}
-                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> đã được ghi nhận an toàn và đang chờ hoàn lại cho bạn.
+                          Giao dịch chuyển khoản của bạn được thực hiện sau khi đơn đã hủy hoặc hết
+                          hạn, và vị trí ghế này hiện đã có người khác giữ/mua. Khoản tiền{' '}
+                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> của bạn đã
+                          được hệ thống ghi nhận an toàn và đang chờ Quản trị viên hoàn trả lại về
+                          tài khoản ngân hàng.
                         </div>
                       </div>
                     </div>

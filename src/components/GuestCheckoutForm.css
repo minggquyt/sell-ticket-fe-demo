@@ -1,0 +1,110 @@
+/* Form thông tin nhận vé cho khách mua vé không cần đăng nhập (guest checkout). */
+.guest-form {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.guest-form-locked {
+  border-style: dashed;
+}
+
+.guest-form-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main, #fff);
+}
+
+.guest-form-title-icon {
+  flex-shrink: 0;
+  color: var(--primary-light, #818cf8);
+}
+
+.guest-field {
+  margin-bottom: 12px;
+}
+
+.guest-field-last {
+  margin-bottom: 6px;
+}
+
+.guest-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main, #fff);
+}
+
+.guest-optional {
+  font-weight: 400;
+  color: var(--text-dim, #94a3b8);
+}
+
+.guest-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.guest-input-wrap:focus-within {
+  border-color: var(--primary-light, #818cf8);
+}
+
+.guest-input-wrap.has-error {
+  border-color: #f87171;
+}
+
+.guest-input-icon {
+  flex-shrink: 0;
+  color: var(--text-dim, #94a3b8);
+}
+
+.guest-input {
+  width: 100%;
+  height: 42px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-main, #fff);
+  font-size: 14px;
+}
+
+.guest-input::placeholder {
+  color: var(--text-dim, #94a3b8);
+}
+
+.guest-error {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: #fca5a5;
+}
+
+.guest-form-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim, #94a3b8);
+}
+
+.guest-form-note strong {
+  color: var(--text-main, #fff);
+}
+
+.guest-note-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}

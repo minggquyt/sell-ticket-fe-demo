@@ -311,29 +311,49 @@ export async function deleteEventOnBackend(eventId, token) {
   return true;
 }
 
+// Gộp email khách vãng lai vào body API (guest checkout 10/11/2026): gửi
+// nhiều tên trường tương đương để BE cũ (bỏ qua field thừa) và BE mới (đọc
+// field nào cũng được) đều chạy được. Không đổi endpoint / method / field cũ.
+function withGuestFields(body, guest) {
+  if (!guest || !guest.email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(guest.email).trim())) {
+    return body;
+  }
+  const email = String(guest.email).trim().toLowerCase();
+  const fullName = String(guest.fullName || '').trim();
+  const phone = String(guest.phone || '').trim();
+  return {
+    ...body,
+    guestEmail: email,
+    email,
+    customerEmail: email,
+    ...(fullName ? { fullName, customerName: fullName } : {}),
+    ...(phone ? { phone, customerPhone: phone } : {}),
+  };
+}
+
 /**
  * Giữ ghế theo Seat ID (Route: POST /api/seats/reserve)
  */
-export async function holdSeats(seatIds, token) {
+export async function holdSeats(seatIds, token, guest = null) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE_URL}/seats/reserve`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ seatIds }),
+    body: JSON.stringify(withGuestFields({ seatIds }, guest)),
   });
   return res.json();
 }
 
-export async function holdZones(eventId, zones, token) {
+export async function holdZones(eventId, zones, token, guest = null) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE_URL}/seats/reserve-zone`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ eventId, zones }),
+    body: JSON.stringify(withGuestFields({ eventId, zones }, guest)),
   });
   return res.json();
 }
@@ -344,7 +364,7 @@ export async function holdZones(eventId, zones, token) {
  * @param {Array<string>} seatIds - Danh sách ID các ghế cần nhả
  * @param {string} token - Bearer token xác thực
  */
-export async function releaseSeats(userId, seatIds, token, orderCode = null) {
+export async function releaseSeats(userId, seatIds, token, orderCode = null, guestEmail = null) {
   try {
     const authToken = token || null;
     const headers = { 'Content-Type': 'application/json' };
@@ -354,7 +374,9 @@ export async function releaseSeats(userId, seatIds, token, orderCode = null) {
     const response = await fetch(`${API_BASE_URL}/seats/release`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ userId, seatIds, orderCode }),
+      body: JSON.stringify(
+        withGuestFields({ userId, seatIds, orderCode }, guestEmail ? { email: guestEmail } : null),
+      ),
     });
 
     const data = await response.json();
@@ -393,7 +415,7 @@ export async function cancelOrder(orderCode, token) {
 /**
  * Bắt đầu thanh toán PayOS (Route: POST /api/seats/start-checkout)
  */
-export async function startCheckout(checkoutPayload, token) {
+export async function startCheckout(checkoutPayload, token, guest = null) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -401,7 +423,9 @@ export async function startCheckout(checkoutPayload, token) {
   const res = await fetch(`${API_BASE_URL}/seats/start-checkout`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(checkoutPayload), // Gửi thẳng object payload lên
+    body: JSON.stringify(
+      withGuestFields(checkoutPayload, guest ? { email: guest.email, fullName: guest.fullName } : null),
+    ),
   });
   return res.json();
 }

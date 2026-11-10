@@ -32,6 +32,13 @@ import {
   releaseSeats,
   fetchOrderStatus,
 } from '../services/eventService';
+import {
+  getSavedGuest,
+  saveGuest,
+  saveLastGuestOrder,
+  isValidGuestEmail,
+  normalizeGuestEmail,
+} from '../services/guestService.js';
 import { formatVND } from '../utils/format.js';
 import { deriveSeatLayout } from '../utils/seatLayout.js';
 import { useToast } from '../components/toastContext.js';
@@ -52,7 +59,7 @@ export default function EventDetailPage({
   isUpComing: propIsUpComing,
   onPaymentSuccess,
   onBack,
-  onRequireLogin,
+  onClaimAccount,
   onAddToCart,
   onOpenCart,
   onRefreshOrders,
@@ -92,13 +99,44 @@ export default function EventDetailPage({
     citizenId: ''
   });
 
+  // --- KHÁCH MUA VÉ KHÔNG CẦN ĐĂNG NHẬP (guest checkout) ---
+  // Đã đăng nhập thì dùng email/tên tài khoản, không hỏi lại. Chưa đăng nhập
+  // thì hỏi email + họ tên nhận vé; lưu lại trình duyệt để tự điền lần sau.
+  const [guest, setGuest] = useState(
+    () => getSavedGuest() || { email: '', fullName: '', phone: '' },
+  );
+  const [guestErrors, setGuestErrors] = useState({});
+  const activeGuest = user
+    ? { email: user.email || '', fullName: user.name || '', phone: '' }
+    : guest;
+
+  const validateGuest = () => {
+    if (user) return true;
+    const errors = {};
+    if (!isValidGuestEmail(guest.email)) errors.email = 'Vui lòng nhập email hợp lệ để nhận vé.';
+    if (!String(guest.fullName || '').trim()) errors.fullName = 'Vui lòng nhập họ và tên.';
+    setGuestErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleGuestChange = (nextGuest) => {
+    setGuest(nextGuest);
+    setGuestErrors((prev) => {
+      const next = { ...prev };
+      if (isValidGuestEmail(nextGuest.email)) delete next.email;
+      if (String(nextGuest.fullName || '').trim()) delete next.fullName;
+      return next;
+    });
+    if (isValidGuestEmail(nextGuest.email)) saveGuest(nextGuest);
+  };
+
   const getOrderStatus = (o) => o?.status || o?.orderStatus || '';
 
   // 1. Khi người dùng click vào nút Thanh toán trên giao diện giữ ghế
   const handlePrePaymentClick = () => {
-    if (!user) {
-      if (onRequireLogin) onRequireLogin();
-      else alert('Vui lòng đăng nhập để tiếp tục thanh toán!'); // THAY BẰNG POPUP MODAL 
+    // Khách chưa đăng nhập: cần email + họ tên nhận vé mới cho qua modal SĐT/CCCD.
+    if (!user && !validateGuest()) {
+      toast.warning('Vui lòng nhập email và họ tên để nhận vé.');
       return;
     }
     // Mở modal nhập SĐT & CCCD trước khi gọi API thanh toán
@@ -334,12 +372,21 @@ export default function EventDetailPage({
 
     setPaidOrderInfo({
       orderCode: orderData.orderCode,
+      customerEmail:
+        orderData.customerEmail || orderData.email || orderData.guestEmail || null,
       totalAmount: verifiedTotal,
       seatNumbers,
       zoneSummary: zoneSummary || `${items.length} vé`,
       items,
       createdAt: orderData.createdAt,
     });
+
+    // Khách vãng lai: lưu mã đơn + email để trang Lịch sử đặt vé tự tra cứu lại.
+    if (!user && orderData.orderCode) {
+      const orderEmail =
+        orderData.customerEmail || orderData.email || orderData.guestEmail || guest.email;
+      if (orderEmail) saveLastGuestOrder(orderData.orderCode, orderEmail);
+    }
 
     localStorage.removeItem(`event_reservation_${event.id}`);
     setIsReserved(false);
@@ -443,9 +490,13 @@ export default function EventDetailPage({
 
       // Gọi API Backend nhả ghế (và hủy link PayOS nếu ghế đang ở PAYMENT_PROCESSING)
       const orderCodeToCancel = parsed?.orderCode || recentPendingOrderCode;
-      await releaseSeats(userIdToRelease, seatIdsToRelease, token, orderCodeToCancel).catch((e) =>
-        console.warn('releaseSeats API warning:', e),
-      );
+      await releaseSeats(
+        userIdToRelease,
+        seatIdsToRelease,
+        token,
+        orderCodeToCancel,
+        parsed?.guestEmail || (!user ? guest.email : null),
+      ).catch((e) => console.warn('releaseSeats API warning:', e));
 
       // Tải lại dữ liệu ghế mới nhất từ backend
       reloadBackendSeats();
@@ -488,13 +539,9 @@ export default function EventDetailPage({
     // Nếu có orderCode (kể cả khi khách bấm Hủy hoặc Thành công): luôn hỏi Backend trước
     if (orderCode) {
       const { token } = getAuthContext();
-      if (!token) {
-        toast.error('Vui lòng đăng nhập để kiểm tra trạng thái đơn hàng.');
-        return;
-      }
 
       setIsProcessingPayment(true);
-      fetchOrderStatus(orderCode, token)
+      fetchOrderStatus(orderCode, token || null)
         .then((res) => {
           const orderData = res?.data;
           if (orderData && orderData.status === 'SUCCESS') {
@@ -554,7 +601,6 @@ export default function EventDetailPage({
   useEffect(() => {
     if (!recentPendingOrderCode || bookingStep === 'success') return;
     const { token } = getAuthContext();
-    if (!token) return;
 
     let attempts = 0;
     const maxAttempts = 18; // 18 * 5s = 90 giây
@@ -566,7 +612,7 @@ export default function EventDetailPage({
         return;
       }
       try {
-        const res = await fetchOrderStatus(recentPendingOrderCode, token);
+        const res = await fetchOrderStatus(recentPendingOrderCode, token || null);
         const orderData = res?.data;
         if (orderData && orderData.status === 'SUCCESS') {
           clearInterval(timer);
@@ -719,7 +765,7 @@ export default function EventDetailPage({
 
   // --- KHÔI PHỤC PHIÊN GIỮ GHẾ KHI REFRESH HOẶC TỰ HỦY KHI BẤM NÚT BACK (<-) TỪ PAYOS ---
   useEffect(() => {
-    if (!event?.id || !user?.id) return;
+    if (!event?.id) return;
     if (handledUrlReturnRef.current) return;
 
     // Nếu trên URL đang có tham số trả về từ PayOS thì nhường cho useEffect xử lý redirect ở trên
@@ -734,6 +780,20 @@ export default function EventDetailPage({
 
     const storageKey = `event_reservation_${event.id}`;
 
+    // Phiên giữ ghế này có phải của người đang dùng trình duyệt này không:
+    // khớp userId (đã đăng nhập) hoặc khớp guestEmail (khách vãng lai).
+    const savedGuest = getSavedGuest();
+    const ownsReservation = (parsedData) => {
+      if (!parsedData) return false;
+      if (parsedData.userId && user?.id) return String(parsedData.userId) === String(user.id);
+      if (parsedData.guestEmail && savedGuest?.email) {
+        return (
+          normalizeGuestEmail(parsedData.guestEmail) === normalizeGuestEmail(savedGuest.email)
+        );
+      }
+      return !parsedData.userId && !parsedData.guestEmail;
+    };
+
     const checkAndRestoreReservation = () => {
       if (hasProcessedBackRef.current) return;
       const savedReservation = localStorage.getItem(storageKey);
@@ -746,14 +806,14 @@ export default function EventDetailPage({
 
         // NẾU ĐANG Ở BƯỚC PAYMENT_PROCESSING MÀ QUAY LẠI TRANG NÀY (BẤM NÚT BACK <- TRÌNH DUYỆT):
         // Kiểm tra xem đơn đã thanh toán trên PayOS chưa trước khi hủy
-        if (parsedData.step === 'PAYMENT_PROCESSING' && parsedData.userId === user.id) {
+        if (parsedData.step === 'PAYMENT_PROCESSING' && ownsReservation(parsedData)) {
           hasProcessedBackRef.current = true;
           localStorage.removeItem(storageKey);
           setIsReserved(false);
           setReservedUntilTime(null);
           const { token } = getAuthContext();
-          if (parsedData.orderCode && token) {
-            fetchOrderStatus(parsedData.orderCode, token)
+          if (parsedData.orderCode) {
+            fetchOrderStatus(parsedData.orderCode, token || null)
               .then((res) => {
                 const orderData = res?.data;
                 if (orderData && orderData.status === 'SUCCESS') {
@@ -792,7 +852,7 @@ export default function EventDetailPage({
         }
 
         // Kiểm tra xem phiên giữ ghế 30s còn hạn và có đúng là của user hiện tại không
-        if (expiryTime > now && parsedData.userId === user.id) {
+        if (expiryTime > now && ownsReservation(parsedData)) {
           if (isSeated) {
             setIsReserved(true);
             setReservedUntilTime(parsedData.reservedUntil);
@@ -840,7 +900,7 @@ export default function EventDetailPage({
             const ids = parsedData.seats.map((s) => s.id).filter(Boolean);
             if (ids.length > 0) {
               const token = user?.token;
-              releaseSeats(parsedData.userId || user?.id, ids, token)
+              releaseSeats(parsedData.userId || user?.id, ids, token, null, parsedData.guestEmail || null)
                 .then(() => reloadBackendSeats())
                 .catch(() => { });
             }
@@ -867,11 +927,13 @@ export default function EventDetailPage({
 
   // --- XỬ LÝ GIỮ GHẾ ---
   const handleReserveSeats = async () => {
-    if (!user) {
-      if (onRequireLogin) onRequireLogin();
-      else toast.warning('Vui lòng đăng nhập để tiếp tục!');
+    // Khách chưa đăng nhập: bắt buộc điền email + họ tên nhận vé (guest checkout).
+    // Đã đăng nhập thì dùng thông tin tài khoản, không hỏi lại.
+    if (!user && !validateGuest()) {
+      toast.warning('Vui lòng nhập email và họ tên để nhận vé.');
       return;
     }
+    if (!user) saveGuest(guest);
     if (!hasSelections) {
       toast.warning('Vui lòng chọn vé trước khi tiến hành giữ chỗ!');
       return;
@@ -897,7 +959,7 @@ export default function EventDetailPage({
           throw new Error('Không tìm thấy thông tin ghế trên hệ thống backend.');
         }
 
-        const holdRes = await holdSeats(seatIdsToCheckout, token);
+        const holdRes = await holdSeats(seatIdsToCheckout, token, activeGuest);
         if (holdRes && holdRes.success === false) {
           throw new Error(holdRes.message || 'Không thể giữ các ghế đã chọn');
         }
@@ -915,6 +977,8 @@ export default function EventDetailPage({
             storageKey,
             JSON.stringify({
               userId: user?.id,
+              guestEmail: activeGuest.email || null,
+              guestName: activeGuest.fullName || null,
               step: 'RESERVED',
               reservedUntil: expiry,
               seats: heldSeatsData,
@@ -931,7 +995,7 @@ export default function EventDetailPage({
             return { zone_name: zoneObj?.id.toUpperCase() || zoneId, quantity: qty };
           });
 
-        const holdRes = await holdZones(event.id, selections, token);
+        const holdRes = await holdZones(event.id, selections, token, activeGuest);
         if (holdRes && holdRes.success === false) {
           throw new Error(holdRes.message || 'Không thể giữ chỗ theo khu vực đã chọn');
         }
@@ -955,6 +1019,8 @@ export default function EventDetailPage({
             storageKey,
             JSON.stringify({
               userId: user?.id,
+              guestEmail: activeGuest.email || null,
+              guestName: activeGuest.fullName || null,
               step: 'RESERVED',
               reservedUntil: expiry,
               seats: returnedSeats,
@@ -978,8 +1044,6 @@ export default function EventDetailPage({
       setIsProcessingPayment(true);
       
       const token = user?.token;
-
-      console.log(token)
 
       let seatIdsToCheckout = [];
       if (isSeated) {
@@ -1014,7 +1078,10 @@ export default function EventDetailPage({
         citizenId: info?.citizenId   // CCCD khách hàng
       };
 
-      const checkoutRes = await startCheckout(checkoutPayload, token); // Hoặc truyền các tham số riêng lẻ tùy API của bạn
+      const checkoutRes = await startCheckout(checkoutPayload, token, {
+        email: activeGuest.email,
+        fullName: activeGuest.fullName,
+      });
 
       if (checkoutRes && checkoutRes.success === false) {
         throw new Error(checkoutRes.message || 'Không thể tạo đơn hàng thanh toán qua PayOS');
@@ -1052,6 +1119,8 @@ export default function EventDetailPage({
           JSON.stringify({
             ...savedObj,
             userId: user?.id,
+            guestEmail: activeGuest.email || savedObj.guestEmail || null,
+            guestName: activeGuest.fullName || savedObj.guestName || null,
             step: 'PAYMENT_PROCESSING',
             orderCode,
             reservedUntil: paymentTimeout,
@@ -1071,6 +1140,10 @@ export default function EventDetailPage({
       setIsProcessingPayment(false);
     }
   };
+
+  // Email hiện trên màn hình thành công: tài khoản > khách đã lưu > email trên đơn
+  // (trường hợp quay về từ PayOS mà trình duyệt này không còn lưu thông tin khách).
+  const successEmail = user?.email || activeGuest.email || paidOrderInfo?.customerEmail || '';
 
   if (!event) {
     return (
@@ -1258,6 +1331,9 @@ export default function EventDetailPage({
             isProcessingPayment={isProcessingPayment}
             isUpcoming={isUpcoming}
             user={user}
+            guest={guest}
+            onGuestChange={handleGuestChange}
+            guestErrors={guestErrors}
             singleSeatTier={singleSeatTier}
             handleReserveSeats={handleReserveSeats}
             handlePayment={handlePayment}
@@ -1283,7 +1359,7 @@ export default function EventDetailPage({
 
             <p className="detail-success-text">
               Mã vé điện tử (E-Ticket) thuộc tài khoản{' '}
-              <strong className="detail-strong-white">{user?.email}</strong> và được lưu trữ an toàn
+              <strong className="detail-strong-white">{successEmail}</strong> và được lưu trữ an toàn
               trong mục <strong className="detail-strong-cyan">Lịch sử đặt vé</strong>.
             </p>
 
@@ -1333,6 +1409,29 @@ export default function EventDetailPage({
                 </span>
               </div>
             </div>
+
+            {!user && successEmail && (
+              <div className="detail-claim-banner">
+                <ShieldCheck size={18} className="detail-claim-icon" />
+                <div className="detail-claim-body">
+                  <div className="detail-claim-title">Muốn xem lại vé này sau này?</div>
+                  <p className="detail-claim-text">
+                    Đăng ký bằng đúng email {successEmail} để đặt mật khẩu cho tài khoản vừa tạo
+                    — giữ nguyên vé đã mua, không cần mua lại.
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    onClaimAccount
+                      ? onClaimAccount(successEmail)
+                      : toast.info('Vui lòng đăng ký bằng email vừa mua vé để nhận lại vé.')
+                  }
+                  className="glow-btn-primary detail-claim-btn"
+                >
+                  Đặt mật khẩu để xem lại vé
+                </button>
+              </div>
+            )}
 
             <div className="detail-success-actions">
               <button
