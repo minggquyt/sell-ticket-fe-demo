@@ -20,12 +20,6 @@ import {
 } from 'lucide-react';
 import { formatVND } from '../utils/format.js';
 import ETicketModal from '../components/ETicketModal.jsx';
-import {
-  fetchGuestOrder,
-  getLastGuestOrder,
-  getSavedGuest,
-  isValidGuestEmail,
-} from '../services/guestService.js';
 import './OrderHistoryPage.css';
 
 export default function OrderHistoryPage({
@@ -37,63 +31,11 @@ export default function OrderHistoryPage({
   onSelectEvent,
   onBack,
   onRequireLogin,
-  onClaimAccount,
+  onGoToBankProfile
 }) {
   // 'paid' | 'refund' | 'all' | 'cancelled'
   const [filterTab, setFilterTab] = useState('paid');
   const [selectedETicketOrder, setSelectedETicketOrder] = useState(null);
-
-  // Tra cứu vé cho khách mua vé không cần đăng nhập (mã đơn + email).
-  const [lookupCode, setLookupCode] = useState(() => getLastGuestOrder()?.orderCode || '');
-  const [lookupEmail, setLookupEmail] = useState(
-    () => getLastGuestOrder()?.email || getSavedGuest()?.email || '',
-  );
-  const [lookupOrder, setLookupOrder] = useState(null);
-  const [lookupLoading, setLookupLoading] = useState(false);
-  const [lookupError, setLookupError] = useState('');
-
-  const guestStatusLabel = (status) =>
-    ({
-      SUCCESS: 'Đã thanh toán (Có hiệu lực)',
-      REFUND_PENDING: 'Chờ hoàn tiền',
-      REFUNDED: 'Đã hoàn tiền',
-      PAYMENT_PROCESSING: 'Đang chờ thanh toán',
-      CANCELLED: 'Đã hủy giao dịch',
-      EXPIRED: 'Hết hạn thanh toán',
-    })[status] || status;
-
-  const runGuestLookup = async (code, email) => {
-    const cleanCode = String(code || '').trim();
-    if (!cleanCode) {
-      setLookupError('Vui lòng nhập mã đơn hàng.');
-      return;
-    }
-    if (!isValidGuestEmail(email)) {
-      setLookupError('Vui lòng nhập đúng email đã dùng khi mua vé.');
-      return;
-    }
-    setLookupError('');
-    setLookupLoading(true);
-    try {
-      const order = await fetchGuestOrder(cleanCode, email);
-      setLookupOrder(order);
-    } catch (err) {
-      setLookupOrder(null);
-      setLookupError(err.message || 'Không tìm thấy đơn hàng.');
-    } finally {
-      setLookupLoading(false);
-    }
-  };
-
-  // Vừa thanh toán xong ở trang sự kiện thì tự tra cứu lại đơn đó cho khách.
-  // Chạy sau khi mount xong (queueMicrotask) để không setState đồng bộ trong effect.
-  useEffect(() => {
-    const last = getLastGuestOrder();
-    if (!user && last) {
-      queueMicrotask(() => runGuestLookup(last.orderCode, last.email));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   if (!user) {
     return (
@@ -104,77 +46,9 @@ export default function OrderHistoryPage({
           </div>
           <h2 className="order-history-guest-title">Lịch sử đặt vé của bạn</h2>
           <p className="order-history-guest-text">
-            Mua vé mà không cần đăng nhập? Nhập mã đơn hàng và email đã dùng khi mua vé để xem vé
-            điện tử. Muốn xem toàn bộ lịch sử thì đăng nhập, hoặc đặt mật khẩu cho email đó.
+            Bạn cần đăng nhập để xem lịch sử đặt vé và vé đã mua. Chức năng tra cứu bằng mã đơn
+            hàng đã được tắt để bảo mật và đảm bảo chỉ tài khoản hợp lệ mới xem được thông tin.
           </p>
-
-          <form
-            className="oh-lookup-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              runGuestLookup(lookupCode, lookupEmail);
-            }}
-          >
-            <div className="oh-lookup-row">
-              <input
-                value={lookupCode}
-                onChange={(e) => setLookupCode(e.target.value)}
-                placeholder="Mã đơn hàng"
-                className="oh-lookup-input"
-              />
-              <input
-                type="email"
-                value={lookupEmail}
-                onChange={(e) => setLookupEmail(e.target.value)}
-                placeholder="Email đã dùng khi mua vé"
-                className="oh-lookup-input"
-              />
-            </div>
-            {lookupError && <p className="oh-lookup-error">{lookupError}</p>}
-            <button
-              type="submit"
-              disabled={lookupLoading}
-              className="glow-btn-primary order-history-btn-primary oh-lookup-submit"
-            >
-              <Search size={16} /> {lookupLoading ? 'Đang tra cứu...' : 'Tra cứu vé'}
-            </button>
-          </form>
-
-          {lookupOrder && (
-            <div className="oh-lookup-result">
-              <div className="oh-lookup-result-head">
-                <CheckCircle2 size={18} className="oh-lookup-result-icon" />
-                <div>
-                  <div className="oh-lookup-result-title">
-                    Đơn #{lookupOrder.orderCode} —{' '}
-                    {guestStatusLabel(lookupOrder.status || lookupOrder.orderStatus)}
-                  </div>
-                  <div className="oh-lookup-result-sub">
-                    {lookupOrder.eventTitle || ''}
-                    {lookupOrder.createdAt
-                      ? ` • ${new Date(lookupOrder.createdAt).toLocaleString('vi-VN')}`
-                      : ''}
-                  </div>
-                </div>
-              </div>
-              <div className="oh-lookup-result-actions">
-                <button
-                  onClick={() => setSelectedETicketOrder(lookupOrder)}
-                  className="glow-btn-primary oh-lookup-btn"
-                >
-                  <Ticket size={15} /> Xem vé điện tử
-                </button>
-                <button
-                  onClick={() =>
-                    onClaimAccount ? onClaimAccount(lookupEmail) : onRequireLogin && onRequireLogin()
-                  }
-                  className="order-history-btn-secondary"
-                >
-                  <KeyRound size={15} /> Đặt mật khẩu để xem lại sau này
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="order-history-guest-actions">
             <button onClick={onBack} className="order-history-btn-secondary">
@@ -185,24 +59,6 @@ export default function OrderHistoryPage({
             </button>
           </div>
         </div>
-
-        <ETicketModal
-          isOpen={Boolean(selectedETicketOrder)}
-          onClose={() => setSelectedETicketOrder(null)}
-          order={selectedETicketOrder}
-          event={
-            selectedETicketOrder
-              ? events.find(
-                  (e) =>
-                    (selectedETicketOrder.eventId &&
-                      String(e.id) === String(selectedETicketOrder.eventId)) ||
-                    (selectedETicketOrder.eventTitle && e.title === selectedETicketOrder.eventTitle),
-                )
-              : null
-          }
-          user={user}
-          onSelectEvent={onSelectEvent}
-        />
       </div>
     );
   }
@@ -546,17 +402,51 @@ export default function OrderHistoryPage({
                           Đơn hàng đang chờ hoàn tiền (Refund Pending)
                         </div>
                         <div className="oh-refund-alert-desc">
-                          Giao dịch chuyển khoản của bạn được thực hiện sau khi đơn đã hủy hoặc hết
-                          hạn, và vị trí ghế này hiện đã có người khác giữ/mua. Khoản tiền{' '}
-                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> của bạn đã
-                          được hệ thống ghi nhận an toàn và đang chờ Quản trị viên hoàn trả lại về
-                          tài khoản ngân hàng.
+                          {order.refundBankError ? (
+                            <>
+                              ⚠️ Admin báo thông tin TK của bạn chưa đúng:{' '}
+                              <strong>{order.refundBankError}</strong>.{' '}
+                              {onGoToBankProfile && (
+                                <button
+                                  onClick={onGoToBankProfile}
+                                  className="oh-refund-inline-link"
+                                >
+                                  Vào Hồ sơ sửa lại ngay
+                                </button>
+                              )}
+                            </>
+                          ) : order.refundBank ? (
+                            <>
+                              Đơn đã hủy/quá hạn. Khoản tiền{' '}
+                              <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> đã ghi
+                              nhận và đang chờ hoàn lại vào TK{' '}
+                              <strong>
+                                {order.refundBank.bankShortName} - {order.refundBank.bankAccountNo}
+                              </strong>
+                              .
+                            </>
+                          ) : (
+                            <>
+                              Đơn đã hủy/quá hạn. Khoản{' '}
+                              <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> đã ghi
+                              nhận an toàn, nhưng bạn chưa có TK ngân hàng.{' '}
+                              {onGoToBankProfile && (
+                                <button
+                                  onClick={onGoToBankProfile}
+                                  className="oh-refund-inline-link"
+                                >
+                                  Vào Hồ sơ cập nhật TK ngân hàng
+                                </button>
+                              )}{' '}
+                              để nhận hoàn tiền.
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {currentStatus === 'REFUNDED' && (
+                  {currentStatus === 'REFUNDED' && order.refundSnapshot && (
                     <div className="oh-refund-alert completed">
                       <CheckCircle2 size={18} className="oh-refund-alert-icon" />
                       <div>
@@ -564,9 +454,18 @@ export default function OrderHistoryPage({
                           Đã hoàn tiền thành công (Refunded)
                         </div>
                         <div className="oh-refund-alert-desc">
-                          Quản trị viên đã hoàn trả khoản tiền{' '}
-                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> của đơn hàng
-                          này về tài khoản ngân hàng của bạn.
+                          Admin đã chuyển khoản{' '}
+                          <strong>{formatVND(Number(order.totalAmount) || 0)}</strong> về TK{' '}
+                          <strong>
+                            {order.refundSnapshot.bankShortName} -{' '}
+                            {order.refundSnapshot.bankAccountNo} (
+                            {order.refundSnapshot.bankAccountName})
+                          </strong>{' '}
+                          lúc{' '}
+                          {order.refundSnapshot.refundedAt
+                            ? new Date(order.refundSnapshot.refundedAt).toLocaleString('vi-VN')
+                            : 'đã xong'}
+                          .
                         </div>
                       </div>
                     </div>
