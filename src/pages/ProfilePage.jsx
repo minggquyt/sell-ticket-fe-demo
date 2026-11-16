@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Landmark, AlertTriangle, Save, Search, User } from 'lucide-react';
-import { fetchMyBank, updateMyBank, fetchVietQrBanks } from '../services/eventService';
+import { ArrowLeft, Landmark, AlertTriangle, Save, Search, User, Phone } from 'lucide-react';
+import {
+  fetchMyBank,
+  updateMyBank,
+  fetchMyProfile,
+  updateMyProfile,
+  fetchVietQrBanks,
+} from '../services/eventService';
 import { stripAccents, toBankAccountName } from '../utils/format.js';
 import { useToast } from '../components/toastContext.js';
 import './OrderHistoryPage.css';
@@ -9,9 +15,10 @@ import './ProfilePage.css';
 
 const ACCOUNT_NO_REGEX = /^[A-Za-z0-9]{6,25}$/;
 
-export default function ProfilePage({ user, onBack, onRequireLogin, onSaved }) {
+export default function ProfilePage({ user, onBack, onRequireLogin, onSaved, onUserUpdated }) {
   const toast = useToast();
   const [profile, setProfile] = useState(null); // { bank, bankError } từ BE
+  const [phone, setPhone] = useState(user?.phone || '');
   const [banks, setBanks] = useState([]);
   const [banksError, setBanksError] = useState('');
   const [bank, setBank] = useState(null); // { bin, shortName, name, logo }
@@ -37,6 +44,19 @@ export default function ProfilePage({ user, onBack, onRequireLogin, onSaved }) {
 
   useEffect(() => {
     if (!user?.token) return;
+
+    fetchMyProfile(user.token)
+      .then((me) => {
+        const nextPhone = me?.phone || user.phone || '';
+        setPhone(nextPhone);
+        if (onUserUpdated && nextPhone !== (user.phone || '')) {
+          onUserUpdated({ ...user, phone: nextPhone });
+        }
+      })
+      .catch(() => {
+        setPhone(user?.phone || '');
+      });
+
     fetchMyBank(user.token)
       .then(applyProfile)
       .catch((err) => setBanksError(err.message));
@@ -82,11 +102,35 @@ export default function ProfilePage({ user, onBack, onRequireLogin, onSaved }) {
   const bankError = profile?.bankError;
   const old = profile?.bank;
   const cleanName = accountName.trim();
+  const cleanPhone = phone.replace(/\D/g, '').trim();
   const unchanged =
     old &&
     old.bankBin === bank?.bin &&
     old.bankAccountNo === accountNo &&
     old.bankAccountName === cleanName;
+
+  const handlePhoneSubmit = async (e) => {
+    e.preventDefault();
+    if (!cleanPhone) {
+      return toast.warning('Số điện thoại không được để trống.');
+    }
+    if (!/^(0|\+84)\d{9,10}$/.test(cleanPhone.replace(/^\+84/, '0')) && !/^\d{10,11}$/.test(cleanPhone)) {
+      return toast.warning('Số điện thoại không đúng định dạng.');
+    }
+
+    try {
+      const saved = await updateMyProfile(cleanPhone, user.token);
+      const nextPhone = saved?.phone || cleanPhone;
+      setPhone(nextPhone);
+      if (onUserUpdated) {
+        onUserUpdated({ ...user, phone: nextPhone });
+      }
+      toast.success('Đã cập nhật số điện thoại.');
+      onSaved?.();
+    } catch (err) {
+      toast.error(err.message || 'Không thể cập nhật số điện thoại.');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -146,6 +190,30 @@ export default function ProfilePage({ user, onBack, onRequireLogin, onSaved }) {
           <span>{profile?.email || user.email}</span>
         </div>
       </div>
+
+      <form onSubmit={handlePhoneSubmit} className="glass-panel pf-card">
+        <h2 className="pf-title">
+          <Phone size={20} /> Số điện thoại
+        </h2>
+        <div className="pf-field">
+          <label className="modal-label" htmlFor="pf-phone">
+            Số điện thoại
+          </label>
+          <input
+            id="pf-phone"
+            type="tel"
+            className="modal-input"
+            placeholder="0912345678"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+            inputMode="numeric"
+            autoComplete="tel"
+          />
+        </div>
+        <button type="submit" className="glow-btn-primary pf-save-btn">
+          <Save size={16} /> Cập nhật số điện thoại
+        </button>
+      </form>
 
       <form id="bank" onSubmit={handleSubmit} className="glass-panel pf-card">
         <h2 className="pf-title">

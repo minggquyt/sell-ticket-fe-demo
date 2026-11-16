@@ -63,6 +63,7 @@ export default function ETicketModal({
       ? new Date(order.eventStartTime).toLocaleDateString('vi-VN')
       : event?.date || (order.createdAt ? new Date(order.createdAt).toLocaleDateString('vi-VN') : 'Đang cập nhật');
 
+
   const eventTime =
     order.eventStartTime
       ? new Date(order.eventStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
@@ -70,8 +71,7 @@ export default function ETicketModal({
 
   const eventVenue = order.location || event?.venue || event?.location || 'Chưa xác định';
   const eventId = order.eventId || event?.id;
-  const customerPhone = order.phone || order.customerPhone || order.customer_phone || user?.phone || 'Chưa cung cấp';
-  const customerCitizenId = order.citizenId || order.customerCitizenId || order.citizen_id || user?.citizenId || 'Chưa cập nhật';
+  const customerPhone = user?.phone || 'Chưa cung cấp';
 
   return createPortal(
     <div className="etm-overlay animate-fade-in" onClick={onClose}>
@@ -127,11 +127,6 @@ export default function ETicketModal({
           <div className="etm-ticket-row">
             <span className="etm-label">SĐT người đặt:</span>
             <span className="etm-val-accent">{customerPhone}</span>
-          </div>
-
-          <div className="etm-ticket-row">
-            <span className="etm-label">CCCD người đặt:</span>
-            <span className="etm-val-accent">{customerCitizenId}</span>
           </div>
 
           {isSeated ? (

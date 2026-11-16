@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Ticket,
   Calendar,
@@ -15,6 +15,8 @@ import {
   Armchair,
   Layers,
   RotateCcw,
+  Search,
+  KeyRound,
 } from 'lucide-react';
 import { formatVND } from '../utils/format.js';
 import ETicketModal from '../components/ETicketModal.jsx';
@@ -29,7 +31,7 @@ export default function OrderHistoryPage({
   onSelectEvent,
   onBack,
   onRequireLogin,
-  onGoToBankProfile,
+  onGoToBankProfile
 }) {
   // 'paid' | 'refund' | 'all' | 'cancelled'
   const [filterTab, setFilterTab] = useState('paid');
@@ -44,9 +46,10 @@ export default function OrderHistoryPage({
           </div>
           <h2 className="order-history-guest-title">Lịch sử đặt vé của bạn</h2>
           <p className="order-history-guest-text">
-            Vui lòng đăng nhập để xem lại toàn bộ danh sách vé điện tử (E-Ticket), trạng thái hoàn
-            tiền và lịch sử giao dịch trên hệ thống.
+            Bạn cần đăng nhập để xem lịch sử đặt vé và vé đã mua. Chức năng tra cứu bằng mã đơn
+            hàng đã được tắt để bảo mật và đảm bảo chỉ tài khoản hợp lệ mới xem được thông tin.
           </p>
+
           <div className="order-history-guest-actions">
             <button onClick={onBack} className="order-history-btn-secondary">
               <ArrowLeft size={16} /> Về trang sự kiện

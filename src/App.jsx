@@ -62,6 +62,7 @@ function EventDetailRoute({
   onPaymentSuccess,
   onBack,
   onRequireLogin,
+  onClaimAccount,
   onAddToCart,
   onOpenCart,
   onRefreshOrders,
@@ -91,6 +92,7 @@ function EventDetailRoute({
       onPaymentSuccess={onPaymentSuccess}
       onBack={onBack}
       onRequireLogin={onRequireLogin}
+      onClaimAccount={onClaimAccount}
       onAddToCart={onAddToCart}
       onOpenCart={onOpenCart}
       onRefreshOrders={onRefreshOrders}
@@ -212,8 +214,14 @@ function AppShell() {
     }
   }, []);
 
-  // Tự động kiểm tra và đồng bộ lại định kỳ mỗi 10 giây (ngầm, không nháy màn hình)
+  // Tự động kiểm tra và đồng bộ lại định kỳ mỗi 10 giây (ngầm, không nháy màn hình).
+  // Không tải dữ liệu sự kiện trên trang đăng nhập/đăng ký để tránh gọi /api/events
+  // trong khi người dùng đang ở luồng xác thực.
   useEffect(() => {
+    if (currentRoute === 'login') {
+      return;
+    }
+
     const initTimer = setTimeout(() => loadEvents(false), 0);
     const interval = setInterval(() => {
       loadEvents(true);
@@ -223,7 +231,7 @@ function AppShell() {
       clearTimeout(initTimer);
       clearInterval(interval);
     };
-  }, [loadEvents, loadUserOrders, user?.token]);
+  }, [currentRoute, loadEvents, loadUserOrders, user?.token]);
 
   // Điều hướng chuyển trang
   const navigateTo = (route, eventId = null) => {
@@ -257,10 +265,26 @@ function AppShell() {
     }
     if (isAdminUser(userData)) {
       navigate('/admin');
+    } else if (sessionStorage.getItem('sellticket_after_login') === 'my-tickets') {
+      try {
+        sessionStorage.removeItem('sellticket_after_login');
+      } catch {
+        /* Bỏ qua: trình duyệt chặn sessionStorage */
+      }
+      navigate('/my-tickets');
     } else if (lastViewedEventId) {
       navigateTo('detail', lastViewedEventId);
     } else {
       navigateTo('events');
+    }
+  };
+
+  const handleUserUpdated = (nextUser) => {
+    setUser(nextUser);
+    if (nextUser) {
+      localStorage.setItem('sellticket_user', JSON.stringify(nextUser));
+    } else {
+      localStorage.removeItem('sellticket_user');
     }
   };
 
@@ -448,6 +472,9 @@ function AppShell() {
                 onPaymentSuccess={handlePaymentSuccess}
                 onBack={() => navigateTo('events')}
                 onRequireLogin={() => navigateTo('login')}
+                onClaimAccount={(email) =>
+                  navigate(`/login?mode=claim&email=${encodeURIComponent(email)}`)
+                }
                 onAddToCart={handleAddToCart}
                 onOpenCart={() => navigateTo('my-tickets')}
                 onRefreshOrders={() => loadUserOrders(null, true)}
@@ -490,6 +517,7 @@ function AppShell() {
                 user={user}
                 onBack={() => navigateTo('my-tickets')}
                 onRequireLogin={() => navigateTo('login')}
+                onUserUpdated={handleUserUpdated}
                 onSaved={() => loadUserOrders(null, true)}
               />
             }

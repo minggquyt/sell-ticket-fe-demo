@@ -259,11 +259,19 @@ export async function loginUser(email, password) {
 /**
  * Đăng ký tài khoản qua Backend (Route: POST /api/auth/register)
  */
-export async function registerUser(email, password, fullName) {
-  return apiRequest('/auth/register', {
+// <<<<<<< HEAD
+export async function registerUser(email, password, fullName, phone) {
+  const res = await fetch(`${API_BASE_URL}/auth/register`, {
     method: 'POST',
-    body: { email, password, fullName },
-    fallbackError: 'Đăng ký thất bại.',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, fullName, phone }),
+// =======
+// export async function registerUser(email, password, fullName) {
+//   return apiRequest('/auth/register', {
+//     method: 'POST',
+//     body: { email, password, fullName },
+//     fallbackError: 'Đăng ký thất bại.',
+// >>>>>>> dbb6bcba633adbb84990580b8eb7abc635f395a4
   });
 }
 
@@ -305,30 +313,96 @@ export async function deleteEventOnBackend(eventId, token) {
   return true;
 }
 
+// Gộp email khách vãng lai vào body API (guest checkout 10/11/2026): gửi
+// nhiều tên trường tương đương để BE cũ (bỏ qua field thừa) và BE mới (đọc
+// field nào cũng được) đều chạy được. Không đổi endpoint / method / field cũ.
+function withGuestFields(body, guest) {
+  if (!guest || !guest.email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(guest.email).trim())) {
+    return body;
+  }
+  const email = String(guest.email).trim().toLowerCase();
+  const fullName = String(guest.fullName || '').trim();
+  return {
+    ...body,
+    guestEmail: email,
+    email,
+    customerEmail: email,
+    ...(fullName ? { fullName, customerName: fullName } : {}),
+  };
+}
+
 /**
  * Giữ ghế theo Seat ID (Route: POST /api/seats/reserve)
  */
+// <<<<<<< HEAD
+// export async function holdSeats(seatIds, token, guest = null) {
+//   const headers = { 'Content-Type': 'application/json' };
+//   if (token) headers['Authorization'] = `Bearer ${token}`;
+
+//   const res = await fetch(`${API_BASE_URL}/seats/reserve`, {
+//     method: 'POST',
+//     headers,
+//     body: JSON.stringify(withGuestFields({ seatIds }, guest)),
+// =======
 export async function holdSeats(seatIds, token) {
   return apiRequest('/seats/reserve', {
     method: 'POST',
     body: { seatIds },
     token,
     fallbackError: 'Không thể giữ các ghế đã chọn.',
+// >>>>>>> dbb6bcba633adbb84990580b8eb7abc635f395a4
   });
 }
 
+// <<<<<<< HEAD
+// export async function holdZones(eventId, zones, token, guest = null) {
+//   const headers = { 'Content-Type': 'application/json' };
+//   if (token) headers['Authorization'] = `Bearer ${token}`;
+
+//   const res = await fetch(`${API_BASE_URL}/seats/reserve-zone`, {
+//     method: 'POST',
+//     headers,
+//     body: JSON.stringify(withGuestFields({ eventId, zones }, guest)),
+// =======
 export async function holdZones(eventId, zones, token) {
   return apiRequest('/seats/reserve-zone', {
     method: 'POST',
     body: { eventId, zones },
     token,
     fallbackError: 'Không thể giữ chỗ theo khu vực đã chọn.',
+// >>>>>>> dbb6bcba633adbb84990580b8eb7abc635f395a4
   });
 }
 
 /**
  * Gọi API lên Backend để hủy giữ chỗ / nhả ghế
  */
+// <<<<<<< HEAD
+// export async function releaseSeats(userId, seatIds, token, orderCode = null, guestEmail = null) {
+//   try {
+//     const authToken = token || null;
+//     const headers = { 'Content-Type': 'application/json' };
+//     if (authToken) {
+//       headers['Authorization'] = `Bearer ${authToken}`;
+//     }
+//     const response = await fetch(`${API_BASE_URL}/seats/release`, {
+//       method: 'POST',
+//       headers,
+//       body: JSON.stringify(
+//         withGuestFields({ userId, seatIds, orderCode }, guestEmail ? { email: guestEmail } : null),
+//       ),
+//     });
+
+//     const data = await response.json();
+//     if (!response.ok) {
+//       throw new Error(data.message || 'Không thể hủy giữ ghế trên hệ thống.');
+//     }
+//     return data;
+//   } catch (err) {
+//     console.error('API releaseSeats error:', err);
+//     throw err;
+//   }
+// =======
 export async function releaseSeats(userId, seatIds, token, orderCode = null) {
   return apiRequest('/seats/release', {
     method: 'POST',
@@ -336,6 +410,7 @@ export async function releaseSeats(userId, seatIds, token, orderCode = null) {
     token: token || null,
     fallbackError: 'Không thể hủy giữ ghế trên hệ thống.',
   });
+// >>>>>>> dbb6bcba633adbb84990580b8eb7abc635f395a4
 }
 
 /**
@@ -421,6 +496,22 @@ export async function markRefundBankErrorOnBackend(orderCode, reason, token) {
 /**
  * User: Hồ sơ ngân hàng nhận hoàn tiền (Route: GET/PUT /api/auth/me/bank)
  */
+export async function fetchMyProfile(token) {
+  return apiRequest('/auth/me', {
+    token,
+    fallbackError: 'Không thể tải thông tin hồ sơ.',
+  });
+}
+
+export async function updateMyProfile(phone, token) {
+  return apiRequest('/auth/me', {
+    method: 'PUT',
+    body: { phone },
+    token,
+    fallbackError: 'Không thể cập nhật số điện thoại.',
+  });
+}
+
 export async function fetchMyBank(token) {
   return apiRequest('/auth/me/bank', {
     token,
