@@ -343,8 +343,7 @@ function AppShell() {
       toast.success('Thêm sự kiện mới thành công lên hệ thống Backend!');
     } catch (err) {
       console.error(err);
-      setEventsList((prev) => [newEvent, ...prev]);
-      toast.error('Đã thêm sự kiện: ' + err.message);
+      toast.error('Không thể thêm sự kiện: ' + err.message);
     }
   };
 
@@ -356,8 +355,7 @@ function AppShell() {
       toast.success('Cập nhật thông tin sự kiện và giá vé thành công lên hệ thống!');
     } catch (err) {
       console.error(err);
-      setEventsList((prev) => prev.map((e) => (e.id === updatedEvent.id ? updatedEvent : e)));
-      toast.error('Đã cập nhật sự kiện: ' + err.message);
+      toast.error('Không thể cập nhật sự kiện: ' + err.message);
     }
   };
 
@@ -368,8 +366,7 @@ function AppShell() {
       toast.success('Đã xóa sự kiện thành công khỏi hệ thống Backend!');
     } catch (err) {
       console.error(err);
-      setEventsList((prev) => prev.filter((e) => e.id !== id));
-      toast.error('Đã xóa sự kiện: ' + err.message);
+      toast.error('Không thể xóa sự kiện: ' + err.message);
     }
   };
 

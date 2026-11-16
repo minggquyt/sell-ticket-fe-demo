@@ -6,8 +6,43 @@ export const API_BASE_URL = (
   typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ? 'http://localhost:3000/api'
-    : import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+    : import.meta.env?.VITE_API_URL || 'http://localhost:3000/api'
 ).replace(/\/$/, '');
+
+/**
+ * Lõi gọi API duy nhất cho toàn Frontend (Anti-Corruption Layer):
+ * - Chuẩn hóa header, parse JSON an toàn, kiểm tra envelope { success, statusCode, message, data }
+ * - Ném Error(message) khi thất bại và trả về dữ liệu nghiệp vụ tinh khiết (data) khi thành công
+ */
+async function apiRequest(path, { method = 'GET', body, token, fallbackError } = {}) {
+  const headers = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+
+  const payload = await res.json().catch(() => null);
+
+  if (!res.ok || payload?.success === false) {
+    throw new Error(payload?.message || fallbackError || `Lỗi máy chủ (HTTP ${res.status}).`);
+  }
+
+  return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
+}
+
+async function apiListRequest(path, { token, logLabel } = {}) {
+  try {
+    const data = await apiRequest(path, { token });
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error(`❌ ${logLabel}:`, err);
+    return [];
+  }
+}
 
 /**
  * Chuẩn hóa sự kiện trả về từ Backend để tương thích giao diện FE
@@ -156,12 +191,7 @@ export function normalizeEvent(raw) {
  */
 export async function fetchEvents() {
   try {
-    const res = await fetch(`${API_BASE_URL}/events`);
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}`);
-    }
-    const result = await res.json();
-    const data = result.data || result;
+    const data = await apiRequest('/events');
     if (!Array.isArray(data)) return [];
     const events = data.map(normalizeEvent);
 
@@ -209,105 +239,69 @@ export async function fetchEvents() {
  * Lấy danh sách ghế / zone của sự kiện từ Backend (Route: GET /api/events/:eventId/details)
  */
 export async function fetchSeatsByEvent(eventId, type) {
-  try {
-    const query = type ? `?type=${encodeURIComponent(type)}` : '';
-    const res = await fetch(`${API_BASE_URL}/events/${eventId}/details${query}`);
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}`);
-    }
-    const result = await res.json();
-    return result.data || [];
-  } catch (err) {
-    console.error(`❌ Lỗi tải chi tiết ghế/zones sự kiện ${eventId}:`, err);
-    return [];
-  }
+  const query = type ? `?type=${encodeURIComponent(type)}` : '';
+  return apiListRequest(`/events/${eventId}/details${query}`, {
+    logLabel: `Lỗi tải chi tiết ghế/zones sự kiện ${eventId}`,
+  });
 }
 
 /**
- * Đăng nhập người dùng qua Backend (Route: POST /api/auth/login)
+ * Đăng nhập người dùng qua Backend (Route: POST /api/auth/login) -> trả về { token, user }
  */
 export async function loginUser(email, password) {
-  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+  return apiRequest('/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: { email, password },
+    fallbackError: 'Đăng nhập thất bại.',
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Đăng nhập thất bại.');
-  }
-  return data;
 }
 
 /**
  * Đăng ký tài khoản qua Backend (Route: POST /api/auth/register)
  */
 export async function registerUser(email, password, fullName) {
-  const res = await fetch(`${API_BASE_URL}/auth/register`, {
+  return apiRequest('/auth/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, fullName }),
+    body: { email, password, fullName },
+    fallbackError: 'Đăng ký thất bại.',
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Đăng ký thất bại.');
-  }
-  return data;
 }
 
 /**
  * Admin: Tạo sự kiện mới (Route: POST /api/admin/events)
  */
 export async function createEventOnBackend(eventData, token) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE_URL}/admin/events`, {
+  const data = await apiRequest('/admin/events', {
     method: 'POST',
-    headers,
-    body: JSON.stringify(eventData),
+    body: eventData,
+    token,
+    fallbackError: 'Không thể tạo sự kiện.',
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Không thể tạo sự kiện.');
-  }
-  return normalizeEvent(data.data);
+  return normalizeEvent(data);
 }
 
 /**
  * Admin: Cập nhật sự kiện (Route: PUT /api/admin/events/:eventId)
  */
 export async function updateEventOnBackend(eventId, eventData, token) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE_URL}/admin/events/${eventId}`, {
+  const data = await apiRequest(`/admin/events/${eventId}`, {
     method: 'PUT',
-    headers,
-    body: JSON.stringify(eventData),
+    body: eventData,
+    token,
+    fallbackError: 'Không thể cập nhật sự kiện.',
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Không thể cập nhật sự kiện.');
-  }
-  return normalizeEvent(data.data);
+  return normalizeEvent(data);
 }
 
 /**
  * Admin: Xóa sự kiện (Route: DELETE /api/admin/events/:eventId)
  */
 export async function deleteEventOnBackend(eventId, token) {
-  const headers = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE_URL}/admin/events/${eventId}`, {
+  await apiRequest(`/admin/events/${eventId}`, {
     method: 'DELETE',
-    headers,
+    token,
+    fallbackError: 'Không thể xóa sự kiện.',
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Không thể xóa sự kiện.');
-  }
   return true;
 }
 
@@ -315,159 +309,87 @@ export async function deleteEventOnBackend(eventId, token) {
  * Giữ ghế theo Seat ID (Route: POST /api/seats/reserve)
  */
 export async function holdSeats(seatIds, token) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE_URL}/seats/reserve`, {
+  return apiRequest('/seats/reserve', {
     method: 'POST',
-    headers,
-    body: JSON.stringify({ seatIds }),
+    body: { seatIds },
+    token,
+    fallbackError: 'Không thể giữ các ghế đã chọn.',
   });
-  return res.json();
 }
 
 export async function holdZones(eventId, zones, token) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE_URL}/seats/reserve-zone`, {
+  return apiRequest('/seats/reserve-zone', {
     method: 'POST',
-    headers,
-    body: JSON.stringify({ eventId, zones }),
+    body: { eventId, zones },
+    token,
+    fallbackError: 'Không thể giữ chỗ theo khu vực đã chọn.',
   });
-  return res.json();
 }
 
 /**
  * Gọi API lên Backend để hủy giữ chỗ / nhả ghế
- * @param {string} userId - ID của người dùng
- * @param {Array<string>} seatIds - Danh sách ID các ghế cần nhả
- * @param {string} token - Bearer token xác thực
  */
 export async function releaseSeats(userId, seatIds, token, orderCode = null) {
-  try {
-    const authToken = token || null;
-    const headers = { 'Content-Type': 'application/json' };
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
-    const response = await fetch(`${API_BASE_URL}/seats/release`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ userId, seatIds, orderCode }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Không thể hủy giữ ghế trên hệ thống.');
-    }
-    return data;
-  } catch (err) {
-    console.error('API releaseSeats error:', err);
-    throw err;
-  }
+  return apiRequest('/seats/release', {
+    method: 'POST',
+    body: { userId, seatIds, orderCode },
+    token: token || null,
+    fallbackError: 'Không thể hủy giữ ghế trên hệ thống.',
+  });
 }
 
 /**
  * Hủy trực tiếp đơn hàng theo orderCode (Route: POST /api/orders/:orderCode/cancel)
  */
 export async function cancelOrder(orderCode, token) {
-  try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const response = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(orderCode)}/cancel`, {
-      method: 'POST',
-      headers,
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Không thể hủy đơn hàng trên hệ thống.');
-    }
-    return data;
-  } catch (err) {
-    console.error('API cancelOrder error:', err);
-    throw err;
-  }
+  return apiRequest(`/orders/${encodeURIComponent(orderCode)}/cancel`, {
+    method: 'POST',
+    token,
+    fallbackError: 'Không thể hủy đơn hàng trên hệ thống.',
+  });
 }
 
 /**
  * Bắt đầu thanh toán PayOS (Route: POST /api/seats/start-checkout)
  */
 export async function startCheckout(checkoutPayload, token) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-
-  const res = await fetch(`${API_BASE_URL}/seats/start-checkout`, {
+  return apiRequest('/seats/start-checkout', {
     method: 'POST',
-    headers,
-    body: JSON.stringify(checkoutPayload), // Gửi thẳng object payload lên
+    body: checkoutPayload,
+    token,
+    fallbackError: 'Không thể tạo đơn hàng thanh toán qua PayOS.',
   });
-  return res.json();
 }
 
 /**
  * Kiểm tra và đồng bộ trạng thái đơn hàng từ Backend (Route: GET /api/orders/:orderCode/status)
  */
 export async function fetchOrderStatus(orderCode, token) {
-  const headers = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(orderCode)}/status`, {
-    method: 'GET',
-    headers,
+  return apiRequest(`/orders/${encodeURIComponent(orderCode)}/status`, {
+    token,
+    fallbackError: 'Không thể xác thực trạng thái đơn hàng.',
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Không thể xác thực trạng thái đơn hàng.');
-  }
-  return data;
 }
 
 /**
  * Lấy lịch sử đặt vé của người dùng hiện tại từ Database (Route: GET /api/orders/my-history)
  */
 export async function fetchMyOrderHistory(token) {
-  try {
-    if (!token) return [];
-    const res = await fetch(`${API_BASE_URL}/orders/my-history`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}`);
-    }
-    const result = await res.json();
-    return Array.isArray(result.data) ? result.data : [];
-  } catch (err) {
-    console.error('❌ Lỗi tải lịch sử đặt vé từ Backend:', err);
-    return [];
-  }
+  if (!token) return [];
+  return apiListRequest('/orders/my-history', {
+    token,
+    logLabel: 'Lỗi tải lịch sử đặt vé từ Backend',
+  });
 }
 
 /**
  * Admin: Lấy danh sách đơn hàng chờ hoàn tiền / đã hoàn tiền (Route: GET /api/admin/refunds)
  */
 export async function fetchAdminRefunds(token) {
-  try {
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const res = await fetch(`${API_BASE_URL}/admin/refunds`, {
-      method: 'GET',
-      headers,
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}`);
-    }
-    const result = await res.json();
-    return Array.isArray(result.data) ? result.data : [];
-  } catch (err) {
-    console.error('❌ Lỗi tải danh sách hoàn tiền từ Backend:', err);
-    return [];
-  }
+  return apiListRequest('/admin/refunds', {
+    token,
+    logLabel: 'Lỗi tải danh sách hoàn tiền từ Backend',
+  });
 }
 
 /**
@@ -476,68 +398,43 @@ export async function fetchAdminRefunds(token) {
  * payload: { bankBin, bankAccountNo, bankAccountName, note }
  */
 export async function confirmOrderRefundOnBackend(orderCode, payload, token) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(
-    `${API_BASE_URL}/admin/orders/${encodeURIComponent(orderCode)}/confirm-refund`,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    },
-  );
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Không thể xác nhận hoàn tiền cho đơn hàng này.');
-  }
-  return data.data;
+  return apiRequest(`/admin/orders/${encodeURIComponent(orderCode)}/confirm-refund`, {
+    method: 'POST',
+    body: payload,
+    token,
+    fallbackError: 'Không thể xác nhận hoàn tiền cho đơn hàng này.',
+  });
 }
 
 /**
  * Admin: Báo sai thông tin TK ngân hàng của khách (Route: POST /api/admin/orders/:orderCode/refund-bank-error)
  */
 export async function markRefundBankErrorOnBackend(orderCode, reason, token) {
-  const res = await fetch(
-    `${API_BASE_URL}/admin/orders/${encodeURIComponent(orderCode)}/refund-bank-error`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ reason }),
-    },
-  );
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Không thể báo sai thông tin tài khoản.');
-  }
-  return data.data;
+  return apiRequest(`/admin/orders/${encodeURIComponent(orderCode)}/refund-bank-error`, {
+    method: 'POST',
+    body: { reason },
+    token,
+    fallbackError: 'Không thể báo sai thông tin tài khoản.',
+  });
 }
 
 /**
  * User: Hồ sơ ngân hàng nhận hoàn tiền (Route: GET/PUT /api/auth/me/bank)
  */
 export async function fetchMyBank(token) {
-  const res = await fetch(`${API_BASE_URL}/auth/me/bank`, {
-    headers: { Authorization: `Bearer ${token}` },
+  return apiRequest('/auth/me/bank', {
+    token,
+    fallbackError: 'Không thể tải thông tin ngân hàng.',
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Không thể tải thông tin ngân hàng.');
-  }
-  return data.data;
 }
 
 export async function updateMyBank(bank, token) {
-  const res = await fetch(`${API_BASE_URL}/auth/me/bank`, {
+  return apiRequest('/auth/me/bank', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(bank),
+    body: bank,
+    token,
+    fallbackError: 'Không thể lưu thông tin ngân hàng.',
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.message || 'Không thể lưu thông tin ngân hàng.');
-  }
-  return data.data;
 }
 
 /**
@@ -568,20 +465,8 @@ export function buildVietQrUrl({ bankBin, bankAccountNo, bankAccountName }, amou
  * Admin: Lấy danh sách toàn bộ vé từ order_items (Route: GET /api/admin/tickets)
  */
 export async function fetchAdminTickets(token) {
-  try {
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const res = await fetch(`${API_BASE_URL}/admin/tickets`, {
-      headers,
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}`);
-    }
-    const result = await res.json();
-    return result.data || [];
-  } catch (err) {
-    console.error('❌ Lỗi tải danh sách vé quản trị từ Backend:', err);
-    return [];
-  }
+  return apiListRequest('/admin/tickets', {
+    token,
+    logLabel: 'Lỗi tải danh sách vé quản trị từ Backend',
+  });
 }
