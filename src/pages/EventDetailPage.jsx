@@ -495,8 +495,7 @@ export default function EventDetailPage({
 
       setIsProcessingPayment(true);
       fetchOrderStatus(orderCode, token)
-        .then((res) => {
-          const orderData = res?.data;
+        .then((orderData) => {
           if (orderData && orderData.status === 'SUCCESS') {
             triggerOrderSuccessUI(orderData, true);
           } else if (orderData && orderData.status === 'REFUND_PENDING') {
@@ -566,8 +565,7 @@ export default function EventDetailPage({
         return;
       }
       try {
-        const res = await fetchOrderStatus(recentPendingOrderCode, token);
-        const orderData = res?.data;
+        const orderData = await fetchOrderStatus(recentPendingOrderCode, token);
         if (orderData && orderData.status === 'SUCCESS') {
           clearInterval(timer);
           toast.success(
@@ -754,8 +752,7 @@ export default function EventDetailPage({
           const { token } = getAuthContext();
           if (parsedData.orderCode && token) {
             fetchOrderStatus(parsedData.orderCode, token)
-              .then((res) => {
-                const orderData = res?.data;
+              .then((orderData) => {
                 if (orderData && orderData.status === 'SUCCESS') {
                   triggerOrderSuccessUI(orderData, true);
                 } else if (orderData && orderData.status === 'REFUND_PENDING') {
@@ -897,16 +894,12 @@ export default function EventDetailPage({
           throw new Error('Không tìm thấy thông tin ghế trên hệ thống backend.');
         }
 
-        const holdRes = await holdSeats(seatIdsToCheckout, token);
-        if (holdRes && holdRes.success === false) {
-          throw new Error(holdRes.message || 'Không thể giữ các ghế đã chọn');
-        }
-
-        const expiry = holdRes?.data?.reserved_until || holdRes?.reserved_until;
-        const heldSeatsData = holdRes?.data?.seats || [];
+        const holdData = await holdSeats(seatIdsToCheckout, token);
+        const expiry = holdData?.reserved_until;
+        const heldSeatsData = holdData?.seats || [];
 
         if (expiry) {
-          setReservedSeatIds(holdRes?.data?.seatIds || seatIdsToCheckout);
+          setReservedSeatIds(holdData?.seatIds || seatIdsToCheckout);
           setReservedUntilTime(expiry);
           setIsReserved(true);
 
@@ -931,14 +924,10 @@ export default function EventDetailPage({
             return { zone_name: zoneObj?.id.toUpperCase() || zoneId, quantity: qty };
           });
 
-        const holdRes = await holdZones(event.id, selections, token);
-        if (holdRes && holdRes.success === false) {
-          throw new Error(holdRes.message || 'Không thể giữ chỗ theo khu vực đã chọn');
-        }
-
-        const returnedSeats = holdRes?.data?.seats || [];
-        const returnedSeatIds = holdRes?.data?.seatIds || [];
-        const expiry = holdRes?.data?.reserved_until || holdRes?.reserved_until;
+        const holdData = await holdZones(event.id, selections, token);
+        const returnedSeats = holdData?.seats || [];
+        const returnedSeatIds = holdData?.seatIds || [];
+        const expiry = holdData?.reserved_until;
 
         if (returnedSeatIds.length === 0) {
           throw new Error('Không nhận được thời gian giữ chỗ hoặc danh sách ghế từ hệ thống.');
@@ -1014,16 +1003,11 @@ export default function EventDetailPage({
         citizenId: info?.citizenId   // CCCD khách hàng
       };
 
-      const checkoutRes = await startCheckout(checkoutPayload, token); // Hoặc truyền các tham số riêng lẻ tùy API của bạn
-
-      if (checkoutRes && checkoutRes.success === false) {
-        throw new Error(checkoutRes.message || 'Không thể tạo đơn hàng thanh toán qua PayOS');
-      }
-
-      const checkoutUrl = checkoutRes?.data?.checkoutUrl || checkoutRes?.checkoutUrl;
-      const orderCode = checkoutRes?.data?.orderCode || checkoutRes?.orderCode;
+      const checkoutData = await startCheckout(checkoutPayload, token);
+      const checkoutUrl = checkoutData?.checkoutUrl;
+      const orderCode = checkoutData?.orderCode;
       const paymentTimeout =
-        checkoutRes?.data?.paymentTimeout || new Date(Date.now() + 120 * 1000).toISOString();
+        checkoutData?.paymentTimeout || new Date(Date.now() + 120 * 1000).toISOString();
 
       if (checkoutUrl) {
         const storageKey = `event_reservation_${event.id}`;
@@ -1061,7 +1045,7 @@ export default function EventDetailPage({
 
         window.location.href = checkoutUrl;
       } else {
-        throw new Error(checkoutRes?.message || 'Không nhận được đường dẫn thanh toán từ PayOS');
+        throw new Error('Không nhận được đường dẫn thanh toán từ PayOS');
       }
     } catch (err) {
       console.error('Lỗi thanh toán:', err);

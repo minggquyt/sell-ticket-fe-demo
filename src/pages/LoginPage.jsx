@@ -31,15 +31,17 @@ export default function LoginPage({ onLoginSuccess }) {
       if (mode === 'register') {
         await registerUser(email, password, fullName);
       }
-      const loginRes = await loginUser(email, password);
-      const userData = loginRes.user;
+      const { token, user: userData } = await loginUser(email, password);
+      if (!token || !userData) {
+        throw new Error('Dữ liệu đăng nhập từ hệ thống không hợp lệ.');
+      }
       const role = (userData.role || '').toLowerCase();
       onLoginSuccess({
         id: userData.id,
         name: userData.fullName || fullName || email.split('@')[0],
         email: userData.email,
         role: role === 'admin' ? 'admin' : 'user',
-        token: loginRes.token,
+        token,
         authProvider: 'Email',
         avatar:
           role === 'admin'
