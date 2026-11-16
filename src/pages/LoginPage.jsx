@@ -47,6 +47,7 @@ export default function LoginPage({ onLoginSuccess }) {
       id: userData.id,
       name: userData.fullName || fallbackName || userData.email.split('@')[0],
       email: userData.email,
+      phone: userData.phone || null,
       role: role === 'admin' ? 'admin' : 'user',
       token: authToken,
       authProvider: 'Email',
@@ -83,8 +84,24 @@ export default function LoginPage({ onLoginSuccess }) {
       if (mode === 'register') {
         await registerUser(email, password, fullName.trim(), phone.replace(/\D/g, '').trim());
       }
-      const loginRes = await loginUser(email, password);
-      onLoginSuccess(toUserData(loginRes, fullName));
+      const { token, user: userData } = await loginUser(email, password);
+      if (!token || !userData) {
+        throw new Error('Dữ liệu đăng nhập từ hệ thống không hợp lệ.');
+      }
+      const role = (userData.role || '').toLowerCase();
+      onLoginSuccess({
+        id: userData.id,
+        name: userData.fullName || fullName || email.split('@')[0],
+        email: userData.email,
+        phone: userData.phone || phone.replace(/\D/g, '').trim() || null,
+        role: role === 'admin' ? 'admin' : 'user',
+        token,
+        authProvider: 'Email',
+        avatar:
+          role === 'admin'
+            ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
+            : `https://api.dicebear.com/7.x/identicon/svg?seed=${email}`,
+      });
     } catch (err) {
       const message = err.message || 'Đăng nhập không thành công. Vui lòng thử lại.';
       setError(message);
