@@ -471,9 +471,11 @@ export async function fetchAdminRefunds(token) {
 }
 
 /**
- * Admin: Xác nhận đã hoàn tiền thủ công cho đơn hàng (Route: POST /api/admin/orders/:orderCode/confirm-refund)
+ * Admin: Xác nhận đã hoàn tiền thủ công (VietQR) + lưu snapshot đối soát
+ * (Route: POST /api/admin/orders/:orderCode/confirm-refund)
+ * payload: { bankBin, bankAccountNo, bankAccountName, note }
  */
-export async function confirmOrderRefundOnBackend(orderCode, token) {
+export async function confirmOrderRefundOnBackend(orderCode, payload, token) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -482,6 +484,7 @@ export async function confirmOrderRefundOnBackend(orderCode, token) {
     {
       method: 'POST',
       headers,
+      body: JSON.stringify(payload),
     },
   );
   const data = await res.json();
@@ -489,6 +492,76 @@ export async function confirmOrderRefundOnBackend(orderCode, token) {
     throw new Error(data.message || 'Không thể xác nhận hoàn tiền cho đơn hàng này.');
   }
   return data.data;
+}
+
+/**
+ * Admin: Báo sai thông tin TK ngân hàng của khách (Route: POST /api/admin/orders/:orderCode/refund-bank-error)
+ */
+export async function markRefundBankErrorOnBackend(orderCode, reason, token) {
+  const res = await fetch(
+    `${API_BASE_URL}/admin/orders/${encodeURIComponent(orderCode)}/refund-bank-error`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reason }),
+    },
+  );
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || 'Không thể báo sai thông tin tài khoản.');
+  }
+  return data.data;
+}
+
+/**
+ * User: Hồ sơ ngân hàng nhận hoàn tiền (Route: GET/PUT /api/auth/me/bank)
+ */
+export async function fetchMyBank(token) {
+  const res = await fetch(`${API_BASE_URL}/auth/me/bank`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || 'Không thể tải thông tin ngân hàng.');
+  }
+  return data.data;
+}
+
+export async function updateMyBank(bank, token) {
+  const res = await fetch(`${API_BASE_URL}/auth/me/bank`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(bank),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || 'Không thể lưu thông tin ngân hàng.');
+  }
+  return data.data;
+}
+
+/**
+ * Danh sách ngân hàng từ Public API miễn phí của VietQR (không cần API key)
+ */
+export async function fetchVietQrBanks() {
+  const res = await fetch('https://api.vietqr.io/v2/banks');
+  const data = await res.json();
+  if (!res.ok || !Array.isArray(data.data)) {
+    throw new Error('Không tải được danh sách ngân hàng từ VietQR.');
+  }
+  return data.data;
+}
+
+/**
+ * Link ảnh VietQR (img.vietqr.io - miễn phí) đã gắn sẵn STK, số tiền, nội dung chuyển khoản
+ */
+export function buildVietQrUrl({ bankBin, bankAccountNo, bankAccountName }, amount, addInfo) {
+  const params = new URLSearchParams({
+    amount: String(Math.round(Number(amount) || 0)),
+    addInfo,
+    accountName: bankAccountName || '',
+  });
+  return `https://img.vietqr.io/image/${encodeURIComponent(bankBin)}-${encodeURIComponent(bankAccountNo)}-compact2.png?${params}`;
 }
 
 /**

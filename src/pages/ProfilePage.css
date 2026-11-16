@@ -1,0 +1,129 @@
+/* Trang Hồ sơ: tái dùng .order-history-page, .oh-*, .modal-label/.modal-input có sẵn */
+.pf-card {
+  padding: 24px;
+  margin-bottom: 20px;
+  max-width: 640px;
+}
+.pf-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+.pf-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+.pf-row {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 14px;
+}
+.pf-label {
+  min-width: 80px;
+  color: var(--text-dim);
+}
+.pf-field {
+  margin-bottom: 16px;
+}
+.pf-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.pf-hint-error {
+  color: #f87171;
+}
+.pf-uppercase {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.pf-alert-error {
+  margin: 0 0 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fecaca;
+}
+
+/* Combobox ngân hàng */
+.pf-combobox {
+  position: relative;
+}
+.pf-combobox-icon {
+  position: absolute;
+  left: 10px;
+  top: 12px;
+  color: var(--text-dim);
+}
+.pf-combobox-input {
+  padding-left: 34px;
+}
+.pf-bank-list {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  margin-top: 4px;
+  list-style: none;
+  padding: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-subtle);
+}
+.pf-bank-option,
+.pf-bank-selected {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+}
+.pf-bank-option:hover,
+.pf-bank-option:focus-visible {
+  background: rgba(99, 102, 241, 0.15);
+}
+.pf-bank-selected {
+  background: #2a2a2a;
+  border: 1px solid #444;
+}
+.pf-bank-logo {
+  width: 56px;
+  height: 28px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.pf-bank-fullname {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.pf-bank-empty {
+  padding: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.pf-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+}
+.pf-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
