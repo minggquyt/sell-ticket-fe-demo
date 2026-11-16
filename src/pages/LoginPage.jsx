@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Mail, Lock, User, ArrowRight, ShieldCheck, AlertCircle, KeyRound } from 'lucide-react';
+import { Mail, Lock, User, Phone, ArrowRight, ShieldCheck, AlertCircle, KeyRound } from 'lucide-react';
 import { loginUser, registerUser } from '../services/eventService';
 import {
   checkEmailStatus,
@@ -22,6 +22,7 @@ export default function LoginPage({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   // Luồng nhận lại vé: email đã tồn tại + password null → xác thực email
@@ -64,15 +65,23 @@ export default function LoginPage({ onLoginSuccess }) {
       setError('Vui lòng nhập đầy đủ Email và Mật khẩu.');
       return;
     }
-    if (mode === 'register' && !fullName) {
-      setError('Vui lòng nhập họ và tên của bạn.');
-      return;
+    if (mode === 'register') {
+      if (!fullName.trim()) {
+        setError('Vui lòng nhập họ và tên của bạn.');
+        return;
+      }
+      const cleanPhone = phone.replace(/\D/g, '').trim();
+      if (!cleanPhone) {
+        setError('Vui lòng nhập số điện thoại để đăng ký.');
+        return;
+      }
+      setPhone(cleanPhone);
     }
 
     setLoading(true);
     try {
       if (mode === 'register') {
-        await registerUser(email, password, fullName);
+        await registerUser(email, password, fullName.trim(), phone.replace(/\D/g, '').trim());
       }
       const loginRes = await loginUser(email, password);
       onLoginSuccess(toUserData(loginRes, fullName));
@@ -311,19 +320,36 @@ export default function LoginPage({ onLoginSuccess }) {
         ) : (
           <form onSubmit={handleEmailSubmit}>
           {mode === 'register' && (
-            <div className="login-group">
-              <label className="login-label">Họ và tên</label>
-              <div className="login-field">
-                <User size={18} color="var(--text-dim)" />
-                <input
-                  type="text"
-                  placeholder="Nguyễn Văn A"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="login-input"
-                />
+            <>
+              <div className="login-group">
+                <label className="login-label">Họ và tên</label>
+                <div className="login-field">
+                  <User size={18} color="var(--text-dim)" />
+                  <input
+                    type="text"
+                    placeholder="Nguyễn Văn A"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="login-input"
+                  />
+                </div>
               </div>
-            </div>
+
+              <div className="login-group">
+                <label className="login-label">Số điện thoại</label>
+                <div className="login-field">
+                  <Phone size={18} color="var(--text-dim)" />
+                  <input
+                    type="tel"
+                    placeholder="0901234567"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                    className="login-input"
+                    inputMode="numeric"
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           <div className="login-group">

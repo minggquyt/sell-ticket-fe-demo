@@ -1,6 +1,5 @@
 import { AlertTriangle, CreditCard, Timer, X } from 'lucide-react';
 import { formatVND } from '../utils/format.js';
-import GuestCheckoutForm from './GuestCheckoutForm.jsx';
 import './BookingSummary.css';
 
 // Panel tóm tắt đặt vé bên phải trang chi tiết (tách từ EventDetailPage ở Phần 3d):
@@ -19,15 +18,10 @@ export default function BookingSummary({
   formatCountdown,
   isProcessingPayment,
   isUpcoming,
-  user,
-  guest,
-  onGuestChange,
-  guestErrors,
   singleSeatTier,
   handleReserveSeats,
-  handlePayment,
   handleCancelReservation,
-  handlePrePaymentClick 
+  handlePrePaymentClick,
 }) {
   return (
     <div className="glass-panel booking-summary-panel">
@@ -93,14 +87,6 @@ export default function BookingSummary({
         </div>
       </div>
 
-      {!user && (
-        <GuestCheckoutForm
-          guest={guest || { email: '', fullName: '', phone: '' }}
-          onGuestChange={onGuestChange}
-          disabled={isReserved}
-          errors={guestErrors || {}}
-        />
-      )}
       <div>
         {/* Nút chính (Giữ chỗ hoặc Thanh toán) */}
         <button

@@ -33,10 +33,7 @@ import {
   fetchOrderStatus,
 } from '../services/eventService';
 import {
-  getSavedGuest,
-  saveGuest,
   saveLastGuestOrder,
-  isValidGuestEmail,
   normalizeGuestEmail,
 } from '../services/guestService.js';
 import { formatVND } from '../utils/format.js';
@@ -59,6 +56,7 @@ export default function EventDetailPage({
   isUpComing: propIsUpComing,
   onPaymentSuccess,
   onBack,
+  onRequireLogin,
   onClaimAccount,
   onAddToCart,
   onOpenCart,
@@ -90,63 +88,21 @@ export default function EventDetailPage({
   const [recentPendingOrderCode, setRecentPendingOrderCode] = useState(null);
   const handledUrlReturnRef = useRef(false);
   const hasProcessedBackRef = useRef(false);
-  // Quản lý trạng thái ẩn/hiện của Modal nhập thông tin
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-
-  // Lưu tạm thông tin SĐT và CCCD do người dùng nhập trong modal
-  const [customerInfo, setCustomerInfo] = useState({
-    phone: '',
-    citizenId: ''
-  });
-
-  // --- KHÁCH MUA VÉ KHÔNG CẦN ĐĂNG NHẬP (guest checkout) ---
-  // Đã đăng nhập thì dùng email/tên tài khoản, không hỏi lại. Chưa đăng nhập
-  // thì hỏi email + họ tên nhận vé; lưu lại trình duyệt để tự điền lần sau.
-  const [guest, setGuest] = useState(
-    () => getSavedGuest() || { email: '', fullName: '', phone: '' },
-  );
-  const [guestErrors, setGuestErrors] = useState({});
-  const activeGuest = user
-    ? { email: user.email || '', fullName: user.name || '', phone: '' }
-    : guest;
-
-  const validateGuest = () => {
-    if (user) return true;
-    const errors = {};
-    if (!isValidGuestEmail(guest.email)) errors.email = 'Vui lòng nhập email hợp lệ để nhận vé.';
-    if (!String(guest.fullName || '').trim()) errors.fullName = 'Vui lòng nhập họ và tên.';
-    setGuestErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleGuestChange = (nextGuest) => {
-    setGuest(nextGuest);
-    setGuestErrors((prev) => {
-      const next = { ...prev };
-      if (isValidGuestEmail(nextGuest.email)) delete next.email;
-      if (String(nextGuest.fullName || '').trim()) delete next.fullName;
-      return next;
-    });
-    if (isValidGuestEmail(nextGuest.email)) saveGuest(nextGuest);
+  const activeGuest = {
+    email: user?.email || '',
+    fullName: user?.name || '',
   };
 
   const getOrderStatus = (o) => o?.status || o?.orderStatus || '';
 
   // 1. Khi người dùng click vào nút Thanh toán trên giao diện giữ ghế
   const handlePrePaymentClick = () => {
-    // Khách chưa đăng nhập: cần email + họ tên nhận vé mới cho qua modal SĐT/CCCD.
-    if (!user && !validateGuest()) {
-      toast.warning('Vui lòng nhập email và họ tên để nhận vé.');
+    if (!user) {
+      toast.info('Vui lòng đăng nhập để tiếp tục thanh toán.');
+      onRequireLogin?.();
       return;
     }
-    // Mở modal nhập SĐT & CCCD trước khi gọi API thanh toán
-    setIsPaymentModalOpen(true);
-  };
-
-  // Khi người dùng đã nhập xong trên Modal và bấm nút Xác nhận để đi tiếp
-  const handleConfirmPaymentWithInfo = (info) => {
-    setIsPaymentModalOpen(false);
-    handlePayment(info); // Gọi hàm thanh toán với thông tin nhận được
+    handlePayment();
   };
 
   // Danh sách các đơn vé đã thanh toán thành công (SUCCESS) của user tại đúng sự kiện này
@@ -384,7 +340,7 @@ export default function EventDetailPage({
     // Khách vãng lai: lưu mã đơn + email để trang Lịch sử đặt vé tự tra cứu lại.
     if (!user && orderData.orderCode) {
       const orderEmail =
-        orderData.customerEmail || orderData.email || orderData.guestEmail || guest.email;
+        orderData.customerEmail || orderData.email || orderData.guestEmail || user?.email || null;
       if (orderEmail) saveLastGuestOrder(orderData.orderCode, orderEmail);
     }
 
@@ -495,7 +451,7 @@ export default function EventDetailPage({
         seatIdsToRelease,
         token,
         orderCodeToCancel,
-        parsed?.guestEmail || (!user ? guest.email : null),
+        parsed?.guestEmail || user?.email || null,
       ).catch((e) => console.warn('releaseSeats API warning:', e));
 
       // Tải lại dữ liệu ghế mới nhất từ backend
@@ -782,15 +738,9 @@ export default function EventDetailPage({
 
     // Phiên giữ ghế này có phải của người đang dùng trình duyệt này không:
     // khớp userId (đã đăng nhập) hoặc khớp guestEmail (khách vãng lai).
-    const savedGuest = getSavedGuest();
     const ownsReservation = (parsedData) => {
       if (!parsedData) return false;
       if (parsedData.userId && user?.id) return String(parsedData.userId) === String(user.id);
-      if (parsedData.guestEmail && savedGuest?.email) {
-        return (
-          normalizeGuestEmail(parsedData.guestEmail) === normalizeGuestEmail(savedGuest.email)
-        );
-      }
       return !parsedData.userId && !parsedData.guestEmail;
     };
 
@@ -927,13 +877,11 @@ export default function EventDetailPage({
 
   // --- XỬ LÝ GIỮ GHẾ ---
   const handleReserveSeats = async () => {
-    // Khách chưa đăng nhập: bắt buộc điền email + họ tên nhận vé (guest checkout).
-    // Đã đăng nhập thì dùng thông tin tài khoản, không hỏi lại.
-    if (!user && !validateGuest()) {
-      toast.warning('Vui lòng nhập email và họ tên để nhận vé.');
+    if (!user) {
+      toast.info('Vui lòng đăng nhập để giữ chỗ.');
+      onRequireLogin?.();
       return;
     }
-    if (!user) saveGuest(guest);
     if (!hasSelections) {
       toast.warning('Vui lòng chọn vé trước khi tiến hành giữ chỗ!');
       return;
@@ -1037,7 +985,7 @@ export default function EventDetailPage({
   };
 
   // --- XỬ LÝ THANH TOÁN QUA PAYOS ---
-  const handlePayment = async (info) => {
+  const handlePayment = async () => {
     try {
       handledUrlReturnRef.current = false;
       hasProcessedBackRef.current = false;
@@ -1069,13 +1017,10 @@ export default function EventDetailPage({
       const returnUrl = `${window.location.origin}/events/${event.id}`;
       const cancelUrl = `${window.location.origin}/events/${event.id}`;
 
-      // 🔑 TRUYỀN THÊM SĐT VÀ CCCD VÀO API STARTCHECKOUT (TÙY THEO PAYLOAD BE CỦA BẠN YÊU CẦU)
       const checkoutPayload = {
         seatIds: seatIdsToCheckout,
         returnUrl,
         cancelUrl,
-        phone: info?.phone,         // SĐT khách hàng
-        citizenId: info?.citizenId   // CCCD khách hàng
       };
 
       const checkoutRes = await startCheckout(checkoutPayload, token, {
@@ -1262,12 +1207,6 @@ export default function EventDetailPage({
       {/* TAB: BOOKING - Bước 1: Chọn vé */}
       {activeTab === 'booking' && bookingStep === 'booking' && (
         <div className="booking-layout-grid">
-          {/* Gọi component Modal và truyền props */}
-          <CustomerInfoModal
-            isOpen={isPaymentModalOpen}
-            onClose={() => setIsPaymentModalOpen(false)}
-            onSubmit={handleConfirmPaymentWithInfo}
-          />
           {/* CỘT TRÁI */}
           <div className="glass-panel detail-left-panel">
             {/* Header thông báo */}
@@ -1331,9 +1270,6 @@ export default function EventDetailPage({
             isProcessingPayment={isProcessingPayment}
             isUpcoming={isUpcoming}
             user={user}
-            guest={guest}
-            onGuestChange={handleGuestChange}
-            guestErrors={guestErrors}
             singleSeatTier={singleSeatTier}
             handleReserveSeats={handleReserveSeats}
             handlePayment={handlePayment}

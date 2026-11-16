@@ -57,53 +57,21 @@ của user khác còn hạn giữ trên BE thật.
   (thiếu `reloadBackendSeats`, cùng loại với warning đã có ở effect tải ghế
   lúc mở trang), 0 lỗi mới.
 
-## 10/11/2026 — Mua vé không cần đăng nhập (guest checkout, anh duyệt làm hết 5 phần)
+## 16/11/2026 — Luồng đặt vé bắt buộc đăng nhập
 
-Luồng mới song song với luồng đăng nhập cũ (không đổi luồng cũ):
-- **P1 — Form khách ở bước giữ ghế:** khi chưa đăng nhập, `BookingSummary`
-  hiện `GuestCheckoutForm` (email bắt buộc + họ tên bắt buộc + SĐT tuỳ chọn,
-  tự điền lại từ localStorage `sellticket_guest`). Chưa điền email thì không
-  giữ được ghế. FE gửi kèm `guestEmail/email/customerEmail/fullName/
-  customerName/phone/customerPhone` vào các API sẵn có (giữ ghế, giữ zone,
-  bắt đầu thanh toán, nhả ghế) — BE cũ bỏ qua field thừa, BE mới đọc được.
-  FE không tự tạo user; khớp/tạo user sau thanh toán là việc BE.
-- **P2 — Về từ PayOS không cần token:** màn hình thành công dùng email khách
-  (`user?.email || activeGuest.email || paidOrderInfo.customerEmail`), hiện
-  vé ngay + banner "Đặt mật khẩu để xem lại vé". Đơn vừa mua lưu localStorage
-  `sellticket_last_order` {orderCode, email}.
-- **P3 — Nhận lại tài khoản (claim):** `LoginPage` thêm mode `claim`
-  (`/login?mode=claim&email=...&code=...`), 2 bước: nhập email → check +
-  gửi mã → nhập mã + mật khẩu mới → đăng nhập rồi về Lịch sử đặt vé.
-  Đăng ký bằng email đã tồn tại hiện hộp gợi ý sang luồng claim.
-  FE gọi 3 endpoint BE MỚI (BE chưa có → 404 → UI báo rõ "BE chưa hỗ trợ",
-  không crash): `POST /api/auth/check-email` → `{exists, hasPassword}`,
-  `POST /api/auth/request-password-setup`,
-  `POST /api/auth/verify-and-set-password` (body `{email, code,
-  verificationCode, password}`).
-- **P4 — Tra cứu vé cho khách:** `OrderHistoryPage` khi chưa đăng nhập hiện
-  form tra cứu (mã đơn + email), dùng lại `GET /api/orders/:orderCode/status`
-  không cần token, đối chiếu `customerEmail` trên đơn khớp mới hiện vé
-  (sai email → "Email không khớp"). Tự tra cứu đơn cuối đã lưu. Navbar:
-  khách thấy nút "Tra cứu vé", user thấy "Lịch sử đặt vé".
-- **P5 — Kiểm thử:** build Vite PASS (436KB JS / 85KB CSS); ESLint các file
-  đã sửa = đúng baseline bản rar (18 problems, 0 lỗi mới); test mới
-  `ticketverse-tests/e2e-guest-checkout.mjs` **23/23 PASS** (A1–A9 luồng
-  khách, B1–B2 về từ PayOS không token, C1–C4 claim, D1–D2 đăng ký trùng
-  email, E1–E4 tra cứu, F1–F2 hồi quy đã đăng nhập); hồi quy
-  `e2e-seatmap.mjs` 9/9, `e2e-seat-status.mjs` 13/13, `e2e-seat-polling.mjs`
-  7/7 PASS. Test nghiệm thu `e2e-acceptance.mjs` đã sửa mock checkout
-  (trả orderCode + URL có orderCode, mock trạng thái đơn + lịch sử) và cập
-  nhật A4–A6 theo màn hình thành công hiện tại → **14/14 PASS** (bản rar
-  gốc cũng chỉ đạt 11/14 ở 3 mục này do test cũ lệch với giao diện mới,
-  không phải do lần sửa này).
+Luồng đặt vé mới không còn cho phép khách vãng lai giữ ghế ngay khi chưa
+đăng nhập. Nếu người dùng bấm "Giữ chỗ ngay" hoặc "Thanh toán" mà chưa login,
+hệ thống sẽ chuyển về trang `/login`, và sau khi đăng nhập thành công sẽ quay
+lại đúng trang chi tiết sự kiện để tiếp tục giữ ghế.
 
-Giả định đã chốt (user không trả lời 4 câu hỏi mở): xác thực bằng mã OTP
-nhập trên web (có hỗ trợ deep-link `?mode=claim&email=&code=`); tra cứu vé
-khách bằng mã đơn + email; sau claim xong về Lịch sử đặt vé.
+- `BookingSummary` không còn hiển thị `GuestCheckoutForm`.
+- `EventDetailPage` kiểm tra `user` ngay trước khi giữ chỗ / thanh toán.
+- Khi chưa đăng nhập, gọi `onRequireLogin()` để điều hướng sang trang login.
+- `App` đã lưu `lastViewedEventId` và sau khi login thành công sẽ quay lại
+  trang sự kiện vừa xem.
 
-**Phụ thuộc BE (chưa có):** 3 endpoint trên + BE khớp email với userid sẵn
-có hoặc tạo user mới (email + password null) sau khi thanh toán thành công,
-lỗi thì không tạo user. Tới khi BE có, FE đã gọi đúng và báo rõ khi 404.
+Đây là luồng mới chốt cho FE: không có form guest checkout ở bước giữ ghế,
+không có lưu email vãng lai để giữ ghế trực tiếp trên trang chi tiết.
 
 ## Gộp vào bản main mới — 10/11/2026 chiều
 

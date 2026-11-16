@@ -242,11 +242,11 @@ export async function loginUser(email, password) {
 /**
  * Đăng ký tài khoản qua Backend (Route: POST /api/auth/register)
  */
-export async function registerUser(email, password, fullName) {
+export async function registerUser(email, password, fullName, phone) {
   const res = await fetch(`${API_BASE_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, fullName }),
+    body: JSON.stringify({ email, password, fullName, phone }),
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
@@ -320,14 +320,12 @@ function withGuestFields(body, guest) {
   }
   const email = String(guest.email).trim().toLowerCase();
   const fullName = String(guest.fullName || '').trim();
-  const phone = String(guest.phone || '').trim();
   return {
     ...body,
     guestEmail: email,
     email,
     customerEmail: email,
     ...(fullName ? { fullName, customerName: fullName } : {}),
-    ...(phone ? { phone, customerPhone: phone } : {}),
   };
 }
 
