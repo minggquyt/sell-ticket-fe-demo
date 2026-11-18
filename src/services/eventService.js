@@ -446,6 +446,29 @@ export async function fetchOrderStatus(orderCode, token) {
   });
 }
 
+let activeSessionInFlight = null;
+
+/**
+ * Lấy phiên giữ ghế (RESERVED) hoặc thanh toán (PAYMENT_PROCESSING) đang hoạt động
+ * của user hiện tại trên Backend để đồng bộ xuyên thiết bị (Route: GET /api/seats/my-active-session)
+ */
+export async function fetchMyActiveSession(token) {
+  if (!token) return null;
+  if (activeSessionInFlight && activeSessionInFlight.token === token) {
+    return activeSessionInFlight.promise;
+  }
+  const promise = apiRequest('/seats/my-active-session', {
+    token,
+    fallbackError: 'Không thể đồng bộ phiên giữ chỗ hiện tại.',
+  }).finally(() => {
+    if (activeSessionInFlight?.promise === promise) {
+      activeSessionInFlight = null;
+    }
+  });
+  activeSessionInFlight = { token, promise };
+  return promise;
+}
+
 /**
  * Lấy lịch sử đặt vé của người dùng hiện tại từ Database (Route: GET /api/orders/my-history)
  */

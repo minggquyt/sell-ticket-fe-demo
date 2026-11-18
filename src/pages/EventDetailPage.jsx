@@ -31,12 +31,21 @@ import {
   startCheckout,
   releaseSeats,
   fetchOrderStatus,
+  fetchMyActiveSession,
 } from '../services/eventService';
 import {
   saveLastGuestOrder,
   normalizeGuestEmail,
 } from '../services/guestService.js';
 import { formatVND } from '../utils/format.js';
+import {
+  RESERVATION_CHANGED_EVENT,
+  clearReservation,
+  formatCountdown,
+  readReservation,
+  saveReservation,
+  syncServerReservationToStorage,
+} from '../utils/paymentSession.js';
 import { deriveSeatLayout } from '../utils/seatLayout.js';
 import { useToast } from '../components/toastContext.js';
 import SeatSelector from '../components/SeatSelector.jsx';
@@ -86,8 +95,10 @@ export default function EventDetailPage({
   const [viewingETicketOrder, setViewingETicketOrder] = useState(null);
   // Theo dõi ngầm mã đơn hàng vừa mở PayOS (nếu khách bấm Hủy trên web nhưng ngay sau đó bấm chuyển tiền trên App ngân hàng đã quét sẵn)
   const [recentPendingOrderCode, setRecentPendingOrderCode] = useState(null);
+  // Phiên thanh toán PayOS đang dở còn hạn được khôi phục lại (cho phép bấm Tiếp tục thanh toán)
+  const [pendingPayment, setPendingPayment] = useState(null);
   const handledUrlReturnRef = useRef(false);
-  const hasProcessedBackRef = useRef(false);
+  const verifyingPendingRef = useRef(null);
   const activeGuest = {
     email: user?.email || '',
     fullName: user?.name || '',
@@ -100,6 +111,10 @@ export default function EventDetailPage({
     if (!user) {
       toast.info('Vui lòng đăng nhập để tiếp tục thanh toán.');
       onRequireLogin?.();
+      return;
+    }
+    if (pendingPayment?.orderCode) {
+      handleResumePendingPayment();
       return;
     }
     handlePayment();
@@ -146,6 +161,18 @@ export default function EventDetailPage({
   const [countdownSeconds, setCountdownSeconds] = useState(0);
   // Trạng thái xử lý thanh toán
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const reservedStateRef = useRef({
+    isReserved: false,
+    reservedUntilTime: null,
+    pendingOrderCode: null,
+  });
+  useEffect(() => {
+    reservedStateRef.current = {
+      isReserved,
+      reservedUntilTime,
+      pendingOrderCode: pendingPayment?.orderCode || null,
+    };
+  }, [isReserved, reservedUntilTime, pendingPayment?.orderCode]);
 
   // Helper lấy token & userId an toàn ngay cả khi state user ở App chưa kịp mount
   const getAuthContext = () => {
@@ -344,7 +371,8 @@ export default function EventDetailPage({
       if (orderEmail) saveLastGuestOrder(orderData.orderCode, orderEmail);
     }
 
-    localStorage.removeItem(`event_reservation_${event.id}`);
+    clearReservation(event.id);
+    setPendingPayment(null);
     setIsReserved(false);
     setReservedUntilTime(null);
     setReservedSeatIds([]);
@@ -391,16 +419,7 @@ export default function EventDetailPage({
   const handleCancelReservation = async (silent = false) => {
     try {
       const { token, userId: authUserId } = getAuthContext();
-      const storageKey = `event_reservation_${event?.id}`;
-      const savedReservation = localStorage.getItem(storageKey);
-      let parsed = null;
-      if (savedReservation) {
-        try {
-          parsed = JSON.parse(savedReservation);
-        } catch {
-          /* Bỏ qua: dữ liệu giữ ghế lưu tạm không hợp lệ */
-        }
-      }
+      const parsed = readReservation(event?.id);
 
       // Thu thập ID các ghế cần hủy giữ chỗ
       let seatIdsToRelease = [];
@@ -430,10 +449,13 @@ export default function EventDetailPage({
 
       seatIdsToRelease = [...new Set(seatIdsToRelease.filter(Boolean))];
       const userIdToRelease = authUserId || parsed?.userId;
+      const orderCodeToCancel =
+        parsed?.orderCode || pendingPayment?.orderCode || recentPendingOrderCode;
 
       // Reset state trên giao diện trước
-      localStorage.removeItem(storageKey);
+      clearReservation(event?.id);
       setIsProcessingPayment(false);
+      setPendingPayment(null);
       setIsReserved(false);
       setReservedUntilTime(null);
       setReservedSeatIds([]);
@@ -445,7 +467,6 @@ export default function EventDetailPage({
       }
 
       // Gọi API Backend nhả ghế (và hủy link PayOS nếu ghế đang ở PAYMENT_PROCESSING)
-      const orderCodeToCancel = parsed?.orderCode || recentPendingOrderCode;
       await releaseSeats(
         userIdToRelease,
         seatIdsToRelease,
@@ -456,6 +477,7 @@ export default function EventDetailPage({
 
       // Tải lại dữ liệu ghế mới nhất từ backend
       reloadBackendSeats();
+      if (onRefreshOrders && orderCodeToCancel) onRefreshOrders();
 
       if (!silent) {
         toast.info('Đã hủy giữ chỗ và mở lại ghế thành công.');
@@ -484,9 +506,9 @@ export default function EventDetailPage({
     if (!isCancel && !orderCode && !status) return;
 
     handledUrlReturnRef.current = true;
-    const storageKey = `event_reservation_${event.id}`;
     if (isCancel) {
-      localStorage.removeItem(storageKey);
+      clearReservation(event.id);
+      setPendingPayment(null);
       setIsReserved(false);
       setReservedUntilTime(null);
     }
@@ -503,7 +525,8 @@ export default function EventDetailPage({
             triggerOrderSuccessUI(orderData, true);
           } else if (orderData && orderData.status === 'REFUND_PENDING') {
             // Đơn chuyển khoản muộn sau khi đã hủy/hết hạn và ghế đã có người khác chọn -> Chờ hoàn tiền!
-            localStorage.removeItem(`event_reservation_${event.id}`);
+            clearReservation(event.id);
+            setPendingPayment(null);
             setIsReserved(false);
             setReservedUntilTime(null);
             setReservedSeatIds([]);
@@ -624,22 +647,35 @@ export default function EventDetailPage({
 
       if (distance <= 0) {
         clearInterval(interval);
-        // Hết thời gian giữ ghế: tự động giải phóng ghế trên Backend và khôi phục giao diện
-        handleCancelReservation(true).then(() => {
-          toast.warning('Thời gian giữ ghế đã hết. Các ghế đã được mở lại!');
-        });
+        if (!readReservation(event?.id)) return;
+        if (pendingPayment?.orderCode) {
+          const { token } = getAuthContext();
+          fetchOrderStatus(pendingPayment.orderCode, token)
+            .then((orderData) => {
+              if (orderData?.status === 'SUCCESS') {
+                triggerOrderSuccessUI(orderData, true);
+                return;
+              }
+              return handleCancelReservation(true).then(() => {
+                toast.warning('Phiên thanh toán đã hết hạn. Các ghế đã được mở lại!');
+              });
+            })
+            .catch(() => {
+              handleCancelReservation(true).then(() => {
+                toast.warning('Phiên thanh toán đã hết hạn. Các ghế đã được mở lại!');
+              });
+            });
+        } else {
+          // Hết thời gian giữ ghế: tự động giải phóng ghế trên Backend và khôi phục giao diện
+          handleCancelReservation(true).then(() => {
+            toast.warning('Thời gian giữ ghế đã hết. Các ghế đã được mở lại!');
+          });
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [reservedUntilTime]);
-
-  // Hàm format giây thành dạng MM:SS để hiển thị cho đẹp
-  const formatCountdown = (totalSeconds) => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  };
+  }, [reservedUntilTime, pendingPayment?.orderCode]);
 
   // --- LOGIC SEATED-BASED ---
   const handleToggleSeat = (seat, tier = singleSeatTier) => {
@@ -706,18 +742,22 @@ export default function EventDetailPage({
     });
   };
 
-  const totalZonePrice = Object.entries(zoneQuantities).reduce((acc, [zoneName, qty]) => {
+  const rawZonePrice = Object.entries(zoneQuantities).reduce((acc, [zoneName, qty]) => {
     const zoneInfo = backendZones[zoneName];
     const price = zoneInfo ? Number(zoneInfo.price) : 0;
 
     return acc + qty * price;
   }, 0);
+  const totalZonePrice =
+    rawZonePrice > 0
+      ? rawZonePrice
+      : reservedZoneSeats.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
 
   // Biến lưu tổng số tiền vé mà user đang giữ
   const totalPrice = isSeated ? totalSeatedPrice : totalZonePrice;
   const hasSelections = isSeated ? selectedSeats.length > 0 : totalZoneCount > 0;
 
-  // --- KHÔI PHỤC PHIÊN GIỮ GHẾ KHI REFRESH HOẶC TỰ HỦY KHI BẤM NÚT BACK (<-) TỪ PAYOS ---
+  // --- KHÔI PHỤC PHIÊN GIỮ GHẾ / PHIÊN THANH TOÁN ĐANG DỞ CÒN HẠN KHI REFRESH HOẶC VÀO LẠI ---
   useEffect(() => {
     if (!event?.id) return;
     if (handledUrlReturnRef.current) return;
@@ -732,134 +772,233 @@ export default function EventDetailPage({
       return;
     }
 
-    const storageKey = `event_reservation_${event.id}`;
-
-    // Phiên giữ ghế này có phải của người đang dùng trình duyệt này không:
-    // khớp userId (đã đăng nhập) hoặc khớp guestEmail (khách vãng lai).
+    // Phiên giữ ghế này có phải của người đang dùng trình duyệt này không
     const ownsReservation = (parsedData) => {
       if (!parsedData) return false;
       if (parsedData.userId && user?.id) return String(parsedData.userId) === String(user.id);
       return !parsedData.userId && !parsedData.guestEmail;
     };
 
-    const checkAndRestoreReservation = () => {
-      if (hasProcessedBackRef.current) return;
-      const savedReservation = localStorage.getItem(storageKey);
-      if (!savedReservation) return;
-
-      try {
-        const parsedData = JSON.parse(savedReservation);
-        const now = new Date();
-        const expiryTime = new Date(parsedData.reservedUntil);
-
-        // NẾU ĐANG Ở BƯỚC PAYMENT_PROCESSING MÀ QUAY LẠI TRANG NÀY (BẤM NÚT BACK <- TRÌNH DUYỆT):
-        // Kiểm tra xem đơn đã thanh toán trên PayOS chưa trước khi hủy
-        if (parsedData.step === 'PAYMENT_PROCESSING' && ownsReservation(parsedData)) {
-          hasProcessedBackRef.current = true;
-          localStorage.removeItem(storageKey);
-          setIsReserved(false);
-          setReservedUntilTime(null);
-          const { token } = getAuthContext();
-          if (parsedData.orderCode && token) {
-            fetchOrderStatus(parsedData.orderCode, token)
-              .then((orderData) => {
-                if (orderData && orderData.status === 'SUCCESS') {
-                  triggerOrderSuccessUI(orderData, true);
-                } else if (orderData && orderData.status === 'REFUND_PENDING') {
-                  localStorage.removeItem(storageKey);
-                  setIsReserved(false);
-                  setReservedUntilTime(null);
-                  setReservedSeatIds([]);
-                  reloadBackendSeats();
-                  if (onRefreshOrders) onRefreshOrders();
-                  toast.warning(
-                    `Đơn #${orderData.orderCode} thanh toán sau khi hết hạn/hủy. Đã chuyển sang Chờ hoàn tiền!`,
-                  );
-                } else {
-                  setRecentPendingOrderCode(parsedData.orderCode);
-                  handleCancelReservation(true).then(() => {
-                    toast.info(
-                      'Bạn đã quay lại từ trang thanh toán. Đơn hàng trước đó đã được hủy và ghế đã được mở lại!',
-                    );
-                  });
-                }
-              })
-              .catch(() => {
-                setRecentPendingOrderCode(parsedData.orderCode);
-                handleCancelReservation(true);
-              });
-          } else {
-            handleCancelReservation(true).then(() => {
-              toast.info(
-                'Bạn đã quay lại từ trang thanh toán. Đơn hàng trước đó đã được hủy và ghế đã được mở lại!',
-              );
-            });
+    const restoreSeatsUI = (rawSeats = []) => {
+      if (!Array.isArray(rawSeats) || rawSeats.length === 0) return;
+      const normalizedIds = rawSeats.map((s) => s.id || s.seatId || s.seat_id).filter(Boolean);
+      setReservedSeatIds(normalizedIds);
+      if (isSeated) {
+        setSelectedSeats(
+          rawSeats.map((seat) => ({
+            id: seat.id || seat.seatId || seat.seat_id,
+            code: seat.seat_number || seat.seatNumber,
+            tier: seat.zone_name || seat.zoneName || singleSeatTier.name || 'Standard',
+            price: Number(seat.price) || singleSeatTier.price,
+            color: singleSeatTier.color || '#3b82f6',
+          })),
+        );
+      } else {
+        setReservedZoneSeats(
+          rawSeats.map((seat) => ({
+            ...seat,
+            id: seat.id || seat.seatId || seat.seat_id,
+            seat_number: seat.seat_number || seat.seatNumber,
+            zone_name: seat.zone_name || seat.zoneName,
+            price: Number(seat.price) || 0,
+          })),
+        );
+        const restoredQuantities = {};
+        rawSeats.forEach((seat) => {
+          const zoneName = seat.zone_name || seat.zoneName;
+          if (zoneName) {
+            restoredQuantities[zoneName] = (restoredQuantities[zoneName] || 0) + 1;
           }
-          return;
-        }
-
-        // Kiểm tra xem phiên giữ ghế 30s còn hạn và có đúng là của user hiện tại không
-        if (expiryTime > now && ownsReservation(parsedData)) {
-          if (isSeated) {
-            setIsReserved(true);
-            setReservedUntilTime(parsedData.reservedUntil);
-
-            if (parsedData.seats && Array.isArray(parsedData.seats)) {
-              setReservedSeatIds(parsedData.seats.map((s) => s.id).filter(Boolean));
-              const restoredSeats = parsedData.seats.map((seat) => {
-                const seatCode = seat.seat_number;
-                const tierName = seat.zone_name || singleSeatTier.name || 'Standard';
-
-                return {
-                  id: seat.id,
-                  code: seatCode,
-                  tier: tierName,
-                  price: seat.price,
-                  color: singleSeatTier.color || '#3b82f6',
-                };
-              });
-
-              setSelectedSeats(restoredSeats);
-            }
-          } else {
-            setIsReserved(true);
-            setReservedUntilTime(parsedData.reservedUntil);
-
-            if (parsedData.seats && Array.isArray(parsedData.seats)) {
-              setReservedSeatIds(parsedData.seats.map((s) => s.id).filter(Boolean));
-              setReservedZoneSeats(parsedData.seats);
-
-              const restoredQuantities = {};
-              parsedData.seats.forEach((seat) => {
-                const zoneName = seat.zone_name;
-                if (zoneName) {
-                  restoredQuantities[zoneName] = (restoredQuantities[zoneName] || 0) + 1;
-                }
-              });
-
-              setZoneQuantities(restoredQuantities);
-            }
-          }
-        } else {
-          // Nếu đã quá hạn hoặc khác user -> Xóa rác trong localStorage và giải phóng ghế trên Backend
-          localStorage.removeItem(storageKey);
-          if (parsedData.seats && Array.isArray(parsedData.seats)) {
-            const ids = parsedData.seats.map((s) => s.id).filter(Boolean);
-            if (ids.length > 0) {
-              const token = user?.token;
-              releaseSeats(parsedData.userId || user?.id, ids, token, null, parsedData.guestEmail || null)
-                .then(() => reloadBackendSeats())
-                .catch(() => { });
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Lỗi khi đọc dữ liệu giữ ghế từ localStorage:', err);
-        localStorage.removeItem(storageKey);
+        });
+        setZoneQuantities(restoredQuantities);
       }
     };
 
-    checkAndRestoreReservation();
+    const resetLocalReservationUI = () => {
+      setPendingPayment(null);
+      setIsReserved(false);
+      setReservedUntilTime(null);
+      setReservedSeatIds([]);
+      if (isSeated) setSelectedSeats([]);
+      else {
+        setReservedZoneSeats([]);
+        setZoneQuantities({});
+      }
+      reloadBackendSeats();
+    };
+
+    const applySessionToUI = (session) => {
+      restoreSeatsUI(session.seats);
+      setIsReserved(true);
+      setReservedUntilTime(session.reservedUntil);
+      if (session.step === 'PAYMENT_PROCESSING') {
+        setPendingPayment({
+          orderCode: Number(session.orderCode),
+          checkoutUrl: session.checkoutUrl || null,
+          totalAmount: session.totalAmount ?? null,
+          reservedUntil: session.reservedUntil,
+        });
+      } else {
+        setPendingPayment(null);
+      }
+    };
+
+    const checkAndRestoreReservation = () => {
+      const parsedData = readReservation(event.id);
+      if (!parsedData) {
+        const { token } = getAuthContext();
+        if (!token || !user?.id) return;
+        if (verifyingPendingRef.current === 'SESSION_SYNC') return;
+        verifyingPendingRef.current = 'SESSION_SYNC';
+
+        fetchMyActiveSession(token)
+          .then((serverSession) => {
+            if (!serverSession || String(serverSession.eventId) !== String(event.id)) return;
+            const saved = syncServerReservationToStorage(user.id, serverSession, { silent: true });
+            if (saved) applySessionToUI(saved);
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (verifyingPendingRef.current === 'SESSION_SYNC') {
+              verifyingPendingRef.current = null;
+            }
+          });
+        return;
+      }
+
+      const now = new Date();
+      const expiryTime = new Date(parsedData.reservedUntil);
+
+      // NẾU ĐANG Ở BƯỚC PAYMENT_PROCESSING: giữ lại nếu còn hạn, hết hạn mới hủy
+      if (parsedData.step === 'PAYMENT_PROCESSING' && ownsReservation(parsedData)) {
+        if (!Number.isFinite(expiryTime.getTime()) || expiryTime <= now) {
+          handleCancelReservation(true);
+          return;
+        }
+
+        const { token } = getAuthContext();
+        if (!parsedData.orderCode || !token) return;
+        if (verifyingPendingRef.current === parsedData.orderCode) return;
+        verifyingPendingRef.current = parsedData.orderCode;
+
+        fetchOrderStatus(parsedData.orderCode, token)
+          .then((orderData) => {
+            const st = orderData?.status;
+            if (st === 'SUCCESS') {
+              triggerOrderSuccessUI(orderData, true);
+              return;
+            }
+            if (st === 'REFUND_PENDING') {
+              clearReservation(event.id);
+              resetLocalReservationUI();
+              if (onRefreshOrders) onRefreshOrders();
+              toast.warning(
+                `Đơn #${orderData.orderCode} thanh toán sau khi hết hạn/hủy. Đã chuyển sang Chờ hoàn tiền!`,
+              );
+              return;
+            }
+            if (st !== 'PAYMENT_PROCESSING') {
+              clearReservation(event.id);
+              resetLocalReservationUI();
+              if (onRefreshOrders) onRefreshOrders();
+              return;
+            }
+
+            const serverExpiry = orderData.expiresAt || parsedData.reservedUntil;
+            const resolvedCheckoutUrl = orderData.checkoutUrl || parsedData.checkoutUrl || null;
+            if (new Date(serverExpiry) <= new Date() || !resolvedCheckoutUrl) {
+              handleCancelReservation(true);
+              return;
+            }
+
+            const rawSeats =
+              Array.isArray(parsedData.seats) && parsedData.seats.length > 0
+                ? parsedData.seats
+                : orderData.items || [];
+            if (
+              resolvedCheckoutUrl !== parsedData.checkoutUrl ||
+              serverExpiry !== parsedData.reservedUntil
+            ) {
+              saveReservation(
+                event.id,
+                {
+                  ...parsedData,
+                  checkoutUrl: resolvedCheckoutUrl,
+                  totalAmount: orderData.totalAmount ?? parsedData.totalAmount ?? null,
+                  reservedUntil: serverExpiry,
+                  seats: rawSeats,
+                },
+                { silent: true },
+              );
+            }
+            applySessionToUI({
+              step: 'PAYMENT_PROCESSING',
+              orderCode: Number(parsedData.orderCode),
+              checkoutUrl: resolvedCheckoutUrl,
+              totalAmount: orderData.totalAmount ?? parsedData.totalAmount ?? null,
+              reservedUntil: serverExpiry,
+              seats: rawSeats,
+            });
+          })
+          .catch((err) => {
+            if (err?.message?.includes('Không tìm thấy')) {
+              clearReservation(event.id);
+              resetLocalReservationUI();
+              return;
+            }
+            if (!parsedData.checkoutUrl) return;
+            // Lỗi mạng tạm thời: vẫn giữ phiên còn hạn từ localStorage để user tiếp tục thanh toán
+            applySessionToUI(parsedData);
+          })
+          .finally(() => {
+            if (verifyingPendingRef.current === parsedData.orderCode) {
+              verifyingPendingRef.current = null;
+            }
+          });
+        return;
+      }
+
+      // Kiểm tra xem phiên giữ ghế 30s còn hạn và có đúng là của user hiện tại không
+      if (expiryTime > now && ownsReservation(parsedData)) {
+        applySessionToUI(parsedData);
+      } else {
+        // Nếu đã quá hạn hoặc khác user -> Xóa rác trong localStorage và giải phóng ghế trên Backend
+        clearReservation(event.id);
+        if (parsedData.seats && Array.isArray(parsedData.seats)) {
+          const ids = parsedData.seats.map((s) => s.id).filter(Boolean);
+          if (ids.length > 0) {
+            const token = user?.token;
+            releaseSeats(parsedData.userId || user?.id, ids, token, null, parsedData.guestEmail || null)
+              .then(() => reloadBackendSeats())
+              .catch(() => { });
+          }
+        }
+      }
+    };
+
+    const initTimer = setTimeout(checkAndRestoreReservation, 0);
+
+    // Đồng bộ nếu người dùng hủy/cập nhật từ Sticky Banner hoặc thiết bị khác
+    const handleReservationChanged = () => {
+      const current = readReservation(event.id);
+      if (!current) {
+        if (reservedStateRef.current.isReserved) resetLocalReservationUI();
+        return;
+      }
+      const {
+        isReserved: curReserved,
+        reservedUntilTime: curUntil,
+        pendingOrderCode: curOrderCode,
+      } = reservedStateRef.current;
+      if (
+        curReserved &&
+        String(curUntil || '') === String(current.reservedUntil || '') &&
+        Number(curOrderCode || 0) === Number(current.orderCode || 0)
+      ) {
+        return;
+      }
+      checkAndRestoreReservation();
+    };
 
     // Bắt thêm sự kiện pageshow (khi trình duyệt khôi phục trang từ BFCache lúc bấm nút Back <-)
     const handlePageShow = (e) => {
@@ -868,8 +1007,15 @@ export default function EventDetailPage({
         checkAndRestoreReservation();
       }
     };
+    window.addEventListener(RESERVATION_CHANGED_EVENT, handleReservationChanged);
+    window.addEventListener('storage', handleReservationChanged);
     window.addEventListener('pageshow', handlePageShow);
-    return () => window.removeEventListener('pageshow', handlePageShow);
+    return () => {
+      clearTimeout(initTimer);
+      window.removeEventListener(RESERVATION_CHANGED_EVENT, handleReservationChanged);
+      window.removeEventListener('storage', handleReservationChanged);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
   }, [event?.id, user?.id, isSeated]);
 
   // --- XỬ LÝ GIỮ GHẾ ---
@@ -913,17 +1059,19 @@ export default function EventDetailPage({
           setReservedUntilTime(expiry);
           setIsReserved(true);
 
-          const storageKey = `event_reservation_${event.id}`;
-          localStorage.setItem(
-            storageKey,
-            JSON.stringify({
+          saveReservation(
+            event.id,
+            {
               userId: user?.id,
               guestEmail: activeGuest.email || null,
               guestName: activeGuest.fullName || null,
               step: 'RESERVED',
+              eventId: event.id,
+              eventTitle: event.title,
+              totalAmount: heldSeatsData.reduce((s, r) => s + (Number(r.price) || 0), 0) || totalPrice,
               reservedUntil: expiry,
               seats: heldSeatsData,
-            }),
+            },
           );
         } else {
           throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
@@ -950,17 +1098,19 @@ export default function EventDetailPage({
         setIsReserved(true);
 
         if (expiry) {
-          const storageKey = `event_reservation_${event.id}`;
-          localStorage.setItem(
-            storageKey,
-            JSON.stringify({
+          saveReservation(
+            event.id,
+            {
               userId: user?.id,
               guestEmail: activeGuest.email || null,
               guestName: activeGuest.fullName || null,
               step: 'RESERVED',
+              eventId: event.id,
+              eventTitle: event.title,
+              totalAmount: returnedSeats.reduce((s, r) => s + (Number(r.price) || 0), 0) || totalPrice,
               reservedUntil: expiry,
               seats: returnedSeats,
-            }),
+            },
           );
         } else {
           throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
@@ -972,11 +1122,55 @@ export default function EventDetailPage({
     }
   };
 
+  // --- TIẾP TỤC PHIÊN THANH TOÁN PAYOS ĐANG DỞ (KHI USER ĐÓNG TAB / QUAY LẠI CÒN HẠN) ---
+  const handleResumePendingPayment = async () => {
+    if (!pendingPayment?.orderCode) return;
+    try {
+      setIsProcessingPayment(true);
+      const { token } = getAuthContext();
+      const orderData = await fetchOrderStatus(pendingPayment.orderCode, token);
+      if (orderData?.status === 'SUCCESS') {
+        triggerOrderSuccessUI(orderData, true);
+        return;
+      }
+      if (orderData?.status === 'REFUND_PENDING') {
+        clearReservation(event.id);
+        setPendingPayment(null);
+        setIsReserved(false);
+        setReservedUntilTime(null);
+        setReservedSeatIds([]);
+        setIsProcessingPayment(false);
+        reloadBackendSeats();
+        if (onRefreshOrders) onRefreshOrders();
+        toast.warning(
+          `Đơn #${orderData.orderCode} thanh toán sau khi hết hạn/hủy. Đã chuyển sang Chờ hoàn tiền!`,
+        );
+        return;
+      }
+      if (orderData?.status !== 'PAYMENT_PROCESSING') {
+        await handleCancelReservation(true);
+        toast.warning('Phiên thanh toán đã hết hạn hoặc bị hủy. Các ghế đã được mở lại!');
+        return;
+      }
+      const serverExpiry = orderData.expiresAt || pendingPayment.reservedUntil;
+      const targetUrl = orderData.checkoutUrl || pendingPayment.checkoutUrl;
+      if (new Date(serverExpiry) <= new Date() || !targetUrl) {
+        await handleCancelReservation(true);
+        toast.warning('Thời gian thanh toán đã hết hạn. Các ghế đã được mở lại!');
+        return;
+      }
+      window.location.href = targetUrl;
+    } catch (err) {
+      console.error('Lỗi tiếp tục thanh toán:', err);
+      toast.error(err.message || 'Không thể tiếp tục thanh toán PayOS!');
+      setIsProcessingPayment(false);
+    }
+  };
+
   // --- XỬ LÝ THANH TOÁN QUA PAYOS ---
   const handlePayment = async () => {
     try {
       handledUrlReturnRef.current = false;
-      hasProcessedBackRef.current = false;
       setIsProcessingPayment(true);
       
       const token = user?.token;
@@ -1018,14 +1212,7 @@ export default function EventDetailPage({
         checkoutData?.paymentTimeout || new Date(Date.now() + 120 * 1000).toISOString();
 
       if (checkoutUrl) {
-        const storageKey = `event_reservation_${event.id}`;
-        let savedObj = {};
-        try {
-          const existing = localStorage.getItem(storageKey);
-          if (existing) savedObj = JSON.parse(existing);
-        } catch {
-          /* ignore */
-        }
+        const savedObj = readReservation(event.id) || {};
 
         const seatsSnapshot =
           savedObj.seats && Array.isArray(savedObj.seats) && savedObj.seats.length > 0
@@ -1039,18 +1226,23 @@ export default function EventDetailPage({
               }))
               : reservedZoneSeats;
 
-        localStorage.setItem(
-          storageKey,
-          JSON.stringify({
+        saveReservation(
+          event.id,
+          {
             ...savedObj,
             userId: user?.id,
             guestEmail: activeGuest.email || savedObj.guestEmail || null,
             guestName: activeGuest.fullName || savedObj.guestName || null,
             step: 'PAYMENT_PROCESSING',
+            eventId: event.id,
+            eventTitle: event.title,
             orderCode,
+            checkoutUrl,
+            totalAmount: checkoutData?.totalAmount ?? totalPrice,
             reservedUntil: paymentTimeout,
             seats: seatsSnapshot,
-          }),
+          },
+          { silent: true },
         );
 
         window.location.href = checkoutUrl;
@@ -1251,6 +1443,8 @@ export default function EventDetailPage({
             isUpcoming={isUpcoming}
             user={user}
             singleSeatTier={singleSeatTier}
+            backendZones={backendZones}
+            pendingPayment={pendingPayment}
             handleReserveSeats={handleReserveSeats}
             handlePayment={handlePayment}
             handleCancelReservation={handleCancelReservation}
