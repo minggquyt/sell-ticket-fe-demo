@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/Navbar';
+import PendingPaymentBanner from './components/PendingPaymentBanner';
 import LoginPage from './pages/LoginPage';
 import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
@@ -453,6 +454,17 @@ function AppShell() {
         unreadNotifCount={notifications.filter((n) => !n.isRead).length}
         hasUrgentNotif={notifications.some((n) => !n.isRead && n.urgent)}
       />
+
+      {/* Thanh khôi phục phiên giữ ghế / thanh toán còn hạn xuyên thiết bị */}
+      {currentRoute !== 'login' && (
+        <PendingPaymentBanner
+          user={user}
+          orders={cart}
+          activeEventId={urlEventId}
+          onNavigate={navigateTo}
+          onOrdersChanged={() => loadUserOrders(null, true)}
+        />
+      )}
 
       {/* Main View Router — React Router (H2) */}
       <main className="app-main">

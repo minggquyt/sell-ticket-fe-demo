@@ -19,10 +19,16 @@ export default function BookingSummary({
   isProcessingPayment,
   isUpcoming,
   singleSeatTier,
+  backendZones = {},
+  pendingPayment = null,
   handleReserveSeats,
   handleCancelReservation,
   handlePrePaymentClick,
 }) {
+  const displayTotal =
+    pendingPayment?.totalAmount != null ? Number(pendingPayment.totalAmount) : totalPrice;
+  const zoneEntries = Object.entries(zoneQuantities || {}).filter(([, qty]) => qty > 0);
+
   return (
     <div className="glass-panel booking-summary-panel">
       <h3 className="booking-title">Thông tin đặt vé</h3>
@@ -54,23 +60,28 @@ export default function BookingSummary({
       ) : (
         <div className="booking-section">
           <div className="booking-zone-label">Vé khu vực ({totalZoneCount}/5):</div>
-          {totalZoneCount === 0 ? (
+          {zoneEntries.length === 0 ? (
             <div className="booking-empty">Nhấn dấu (+) để thêm vé theo khu vực.</div>
           ) : (
             <div className="booking-zone-list">
-              {event.zones
-                ?.filter((z) => (zoneQuantities[z.id] || 0) > 0)
-                .map((z) => (
-                  <div key={z.id} className="booking-row">
+              {zoneEntries.map(([zoneKey, qty]) => {
+                const upperKey = String(zoneKey).toUpperCase();
+                const matchedStaticZone = event.zones?.find(
+                  (z) => String(z.id).toUpperCase() === upperKey,
+                );
+                const meta = backendZones?.[zoneKey] || backendZones?.[upperKey] || matchedStaticZone;
+                const zoneName = meta?.name || zoneKey;
+                const unitPrice = Number(meta?.price) || 0;
+                return (
+                  <div key={zoneKey} className="booking-row">
                     <div>
-                      <span className="booking-zone-name">{z.name}</span>
-                      <div className="booking-zone-qty">x {zoneQuantities[z.id]} vé</div>
+                      <span className="booking-zone-name">{zoneName}</span>
+                      <div className="booking-zone-qty">x {qty} vé</div>
                     </div>
-                    <span className="booking-price-strong">
-                      {formatVND(z.price * zoneQuantities[z.id])}
-                    </span>
+                    <span className="booking-price-strong">{formatVND(unitPrice * qty)}</span>
                   </div>
-                ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -83,7 +94,7 @@ export default function BookingSummary({
         </div>
         <div className="booking-total-row">
           <span className="booking-total-label">Tổng thanh toán:</span>
-          <span className="booking-total-value">{formatVND(totalPrice)}</span>
+          <span className="booking-total-value">{formatVND(displayTotal)}</span>
         </div>
       </div>
 
@@ -91,7 +102,7 @@ export default function BookingSummary({
         {/* Nút chính (Giữ chỗ hoặc Thanh toán) */}
         <button
           onClick={isReserved ? handlePrePaymentClick : handleReserveSeats}
-          disabled={!hasSelections || isProcessingPayment || isUpcoming}
+          disabled={(!hasSelections && !pendingPayment) || isProcessingPayment || isUpcoming}
           className="glow-btn-pink booking-main-btn"
         >
           {isProcessingPayment ? (
@@ -105,15 +116,21 @@ export default function BookingSummary({
               <span>Sự kiện chưa mở bán</span>
             </div>
           ) : isReserved ? (
-            // TRẠNG THÁI 2: ĐÃ GIỮ GHẾ -> HIỂN THỊ NÚT THANH TOÁN VÀ ĐỒNG HỒ ĐẾM NGƯỢC
+            // TRẠNG THÁI 2: ĐÃ GIỮ GHẾ HOẶC ĐANG CHỜ THANH TOÁN -> HIỂN THỊ NÚT THANH TOÁN VÀ ĐỒNG HỒ ĐẾM NGƯỢC
             <div className="booking-pay-wrap">
               <div className="booking-btn-row booking-btn-row-wrap">
                 <CreditCard size={18} className="booking-icon-fixed" />
-                <span>{`Thanh toán qua PayOS • ${formatVND(totalPrice)}`}</span>
+                <span>
+                  {pendingPayment
+                    ? `Tiếp tục thanh toán đơn #${pendingPayment.orderCode} • ${formatVND(displayTotal)}`
+                    : `Thanh toán qua PayOS • ${formatVND(displayTotal)}`}
+                </span>
               </div>
               <span className="booking-countdown">
-                <Timer size={12} /> Giữ ghế thành công! Hết hạn sau:{' '}
-                {formatCountdown(countdownSeconds)}
+                <Timer size={12} />{' '}
+                {pendingPayment
+                  ? `Đơn đang chờ thanh toán! Hết hạn sau: ${formatCountdown(countdownSeconds)}`
+                  : `Giữ ghế thành công! Hết hạn sau: ${formatCountdown(countdownSeconds)}`}
               </span>
             </div>
           ) : (
@@ -125,14 +142,17 @@ export default function BookingSummary({
           )}
         </button>
 
-        {/* NÚT HỦY GIỮ GHẾ (Chỉ hiện khi isReserved = true) */}
+        {/* NÚT HỦY GIỮ GHẾ / HỦY ĐƠN (Chỉ hiện khi isReserved = true) */}
         {isReserved && (
           <button
-            onClick={handleCancelReservation}
+            onClick={() => handleCancelReservation(false)}
             disabled={isProcessingPayment}
             className="booking-cancel-btn"
           >
-            <X size={14} /> Hủy giữ ghế / Chọn lại
+            <X size={14} />{' '}
+            {pendingPayment
+              ? `Hủy đơn #${pendingPayment.orderCode} / Chọn lại ghế`
+              : 'Hủy giữ ghế / Chọn lại'}
           </button>
         )}
       </div>
