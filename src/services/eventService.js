@@ -1,5 +1,6 @@
 import { formatEventDate, formatEventTime } from '../data/events.js';
 import { getRowLetter } from '../utils/seatLayout.js';
+import { isAuthError, notifyAuthExpired } from '../utils/authSession.js';
 
 // Cấu hình URL Backend: ưu tiên localhost khi chạy môi trường local dev, fallback VITE_API_URL
 export const API_BASE_URL = (
@@ -31,6 +32,9 @@ async function apiRequest(path, { method = 'GET', body, token, fallbackError } =
     const err = new Error(payload?.message || fallbackError || `Lỗi máy chủ (HTTP ${res.status}).`);
     err.status = res.status;
     err.payload = payload;
+    if (isAuthError(res.status, payload)) {
+      notifyAuthExpired(payload?.message || 'Phiên đăng nhập đã hết hạn.');
+    }
     throw err;
   }
 

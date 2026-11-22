@@ -24,6 +24,14 @@ import { ToastProvider } from './components/Toast.jsx';
 import Footer from './components/Footer.jsx';
 import './App.css';
 import { useToast } from './components/toastContext.js';
+import {
+  AUTH_EXPIRED_EVENT,
+  clearStoredAuth,
+  getJwtExpiryMs,
+  isJwtExpired,
+  notifyAuthExpired,
+  readStoredUser,
+} from './utils/authSession.js';
 
 // Kiểm tra quyền admin ở một chỗ duy nhất (role có thể là 'admin' hoặc 'ADMIN')
 const isAdminUser = (u) => Boolean(u && (u.role === 'admin' || u.role === 'ADMIN'));
@@ -105,15 +113,7 @@ function EventDetailRoute({
 function AppShell() {
   const [eventsList, setEventsList] = useState([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
-  const [user, setUser] = useState(() => {
-    try {
-      const savedUser = localStorage.getItem('sellticket_user');
-      return savedUser ? JSON.parse(savedUser) : null;
-    } catch (e) {
-      console.warn('L?i ??c user t? localStorage:', e);
-      return null;
-    }
-  });
+  const [user, setUser] = useState(() => readStoredUser());
   const [cart, setCart] = useState([]); // Danh sách toàn bộ đơn đặt vé từ Database (Lịch sử đặt vé)
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
@@ -154,6 +154,55 @@ function AppShell() {
   }
 
   const toast = useToast();
+
+  useEffect(() => {
+    if (!user?.token) return undefined;
+
+    const performLogout = (reason = 'Phiên đăng nhập đã hết hạn.') => {
+      clearStoredAuth();
+      setUser(null);
+      setCart([]);
+      toast.info(reason);
+      navigate('/login', { replace: true });
+    };
+
+    const checkExpiry = () => {
+      if (isJwtExpired(user.token)) performLogout();
+    };
+
+    checkExpiry();
+
+    const expiresAt = getJwtExpiryMs(user.token);
+    const timeout = expiresAt
+      ? window.setTimeout(checkExpiry, Math.max(0, expiresAt - Date.now() + 50))
+      : null;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') checkExpiry();
+    };
+    const handleStorage = (event) => {
+      if (event.key !== 'sellticket_user') return;
+      const nextUser = readStoredUser();
+      setUser(nextUser);
+      if (!nextUser) setCart([]);
+    };
+    const handleAuthExpired = (event) => {
+      performLogout(event.detail?.reason || 'Phiên đăng nhập đã hết hạn.');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', checkExpiry);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+
+    return () => {
+      if (timeout) window.clearTimeout(timeout);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', checkExpiry);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    };
+  }, [user?.token, navigate, toast]);
 
   // Tải lịch sử đặt vé của người dùng từ Database (GET /api/orders/my-history)
   const loadUserOrders = useCallback(
