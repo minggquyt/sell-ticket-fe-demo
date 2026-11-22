@@ -587,6 +587,9 @@ export default function EventDetailPage({
 
   // --- LOGIC SEATED-BASED ---
   const handleToggleSeat = (seat, tier = singleSeatTier) => {
+    // Nếu đang trong trạng thái giữ ghế (đếm ngược), không cho phép thay đổi lựa chọn
+    if (isReserved) return;
+
     const seatId = seat.id;
     const seatCode = seat.displayCode || seat.seat_number;
     if (occupiedSeats.has(seat.seat_number) || (seatId && occupiedSeats.has(seatId))) return;
@@ -599,7 +602,7 @@ export default function EventDetailPage({
       );
     } else {
       if (selectedSeats.length >= MAX_TICKETS_PER_ORDER) {
-        toast.warning('Bạn chỉ được chọn tối đa 5 ghế cho mỗi đơn hàng theo quy định!');
+        toast.warning('Bạn chỉ được chọn tối đa 4 ghế cho mỗi đơn hàng theo quy định!');
         return;
       }
 

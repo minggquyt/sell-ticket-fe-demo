@@ -2,7 +2,7 @@ export const CATEGORIES = ['Tất cả', 'Âm nhạc', 'Lễ hội', 'Hội th�
 export const CITIES = ['Tất cả địa điểm', 'Hà Nội', 'TP.HCM'];
 
 // Giới hạn số vé tối đa trong một lần đặt (dùng ở trang chi tiết sự kiện)
-export const MAX_TICKETS_PER_ORDER = 5;
+export const MAX_TICKETS_PER_ORDER = 4;
 
 // Helpers tiện ích cho toàn bộ frontend
 export const isSeatedEvent = (event) => {
