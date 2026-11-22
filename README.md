@@ -91,3 +91,14 @@ Kiểm thử trên bản đã gộp: build PASS; guest checkout **24/24 PASS** (
 checkout gửi kèm SĐT + CCCD từ modal); nghiệm thu 14/14; seatmap 9/9;
 seat-status 13/13; polling 7/7. Test đã cập nhật bước điền modal SĐT/CCCD
 trước khi bấm "Tiếp tục thanh toán".
+
+## 22/11/2026 — Thanh toán VietQR nội bộ (In-Site PayOS QR Checkout)
+
+Đưa toàn bộ màn hình thanh toán PayOS về trang nội bộ `/checkout/:orderCode`, bỏ redirect sang `pay.payos.vn` và bỏ cơ chế return URL query cũ.
+
+- **Thư viện mới:** đã thêm `qrcode.react` (`^4.2.0`) — **lưu ý chạy `npm install`** sau khi pull nhánh mới.
+- **Trang thanh toán mới (`/checkout/:orderCode`):** `src/pages/CheckoutPage.jsx` + `src/hooks/useOrderCheckout.js` theo bố cục tối giản chuẩn PayOS trên nền Dark Cyber theme của TicketVerse, dùng `QRCodeCanvas` nền trắng, hỗ trợ tải ảnh QR PNG và copy 1 chạm thông tin chuyển khoản.
+- **Nhận trạng thái 100% tự động (không có nút "Tôi đã chuyển khoản"):** kết hợp SSE (`GET /api/orders/:orderCode/events` dùng `fetch` + `Authorization: Bearer`), fallback DB polling (`3s`/`12s`), trigger `?sync=1` tại các mốc quan trọng, bù lệch giờ `serverTime` và đồng bộ đa tab.
+- **Cửa sổ thời gian `120s + 30s`:** 120s quét QR (`WAITING`), sau đó chuyển sang pha `CONFIRMING` 30s (làm mờ QR, khóa nút Hủy để chờ webhook giao dịch giờ chót); thanh toán muộn quá 120s chuyển thẳng `REFUND_PENDING` với CTA cập nhật TK hoàn tiền.
+- **Mobile VietQR Deeplinks:** `src/components/MobileBankDeeplinks.jsx` + `src/utils/vietqrDeeplink.js` chỉ hiển thị trên iOS/Android, tách nhóm app hỗ trợ `autofill` ở trên và nhóm ngân hàng khác kèm hướng dẫn quét QR từ thư viện ảnh.
+- **Chi tiết đầy đủ cho team FE:** xem [docs/IN_SITE_PAYOS_QR_CHECKOUT.md](./docs/IN_SITE_PAYOS_QR_CHECKOUT.md).
