@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Ticket,
   Calendar,
@@ -14,10 +15,14 @@ import {
   Armchair,
   Layers,
   RotateCcw,
+  BadgeCheck,
 } from 'lucide-react';
-import { formatVND } from '../utils/format.js';
+import { formatVND, TICKET_TABS, getTicketTabByStatus } from '../utils/format.js';
 import ETicketModal from '../components/ETicketModal.jsx';
 import './OrderHistoryPage.css';
+
+const getStatus = (o) => o?.status || o?.orderStatus || '';
+const VALID_TICKET_TABS = new Set(Object.values(TICKET_TABS));
 
 export default function OrderHistoryPage({
   user,
@@ -31,20 +36,42 @@ export default function OrderHistoryPage({
   onRequireLogin,
   onGoToBankProfile
 }) {
-  // 'paid' | 'refund' | 'all' | 'cancelled'
-  const [filterTab, setFilterTab] = useState('paid');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedETicketOrder, setSelectedETicketOrder] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const scrolledRef = useRef(null);
 
-  const hasProcessingOrder = Array.isArray(orders)
-    ? orders.some((o) => (o?.status || o?.orderStatus) === 'PAYMENT_PROCESSING')
-    : false;
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const focusCode = searchParams.get('order') || '';
+  const focusOrder = focusCode
+    ? safeOrders.find((o) => o?.orderCode != null && String(o.orderCode) === focusCode) || null
+    : null;
+
+  const hasProcessingOrder = safeOrders.some((o) => getStatus(o) === 'PAYMENT_PROCESSING');
 
   useEffect(() => {
     if (!hasProcessingOrder) return undefined;
     const timer = setInterval(() => setNowMs(Date.now()), 10000);
     return () => clearInterval(timer);
   }, [hasProcessingOrder]);
+
+  useEffect(() => {
+    if (!focusCode) {
+      scrolledRef.current = null;
+      return undefined;
+    }
+    if (!user || !focusOrder) return undefined;
+    if (scrolledRef.current === focusCode) return undefined;
+
+    const rafId = window.requestAnimationFrame(() => {
+      const el = document.getElementById(`order-card-${focusOrder.orderCode}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        scrolledRef.current = focusCode;
+      }
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [user, focusCode, focusOrder]);
 
   if (!user) {
     return (
@@ -72,27 +99,57 @@ export default function OrderHistoryPage({
     );
   }
 
-  const getStatus = (o) => o?.status || o?.orderStatus || '';
+  const rawTab = searchParams.get('tab');
+  const tabParam = VALID_TICKET_TABS.has(rawTab) ? rawTab : null;
+  const filterTab = focusOrder
+    ? getTicketTabByStatus(getStatus(focusOrder))
+    : tabParam || TICKET_TABS.PAID;
 
-  const paidOrders = orders.filter((o) => getStatus(o) === 'SUCCESS');
-  const refundOrders = orders.filter(
-    (o) => getStatus(o) === 'REFUND_PENDING' || getStatus(o) === 'REFUNDED',
-  );
-  const cancelledOrExpiredOrders = orders.filter(
+  const handleTabChange = (nextTab) => {
+    setSearchParams({ tab: nextTab }, { replace: true });
+  };
+
+  const paidOrders = safeOrders.filter((o) => getStatus(o) === 'SUCCESS');
+  const refundPendingOrders = safeOrders.filter((o) => getStatus(o) === 'REFUND_PENDING');
+  const refundedOrders = safeOrders.filter((o) => getStatus(o) === 'REFUNDED');
+  const cancelledOrExpiredOrders = safeOrders.filter(
     (o) =>
       getStatus(o) === 'CANCELLED' ||
       getStatus(o) === 'EXPIRED' ||
       getStatus(o) === 'FAILED',
   );
+  const hasRefundBankAlert = refundPendingOrders.some(
+    (o) => Boolean(o.refundBankError) || !o.refundBank,
+  );
 
   const displayedOrders =
-    filterTab === 'paid'
+    filterTab === TICKET_TABS.PAID
       ? paidOrders
-      : filterTab === 'refund'
-        ? refundOrders
-        : filterTab === 'cancelled'
-          ? cancelledOrExpiredOrders
-          : orders;
+      : filterTab === TICKET_TABS.REFUND_PENDING
+        ? refundPendingOrders
+        : filterTab === TICKET_TABS.REFUNDED
+          ? refundedOrders
+          : filterTab === TICKET_TABS.CANCELLED
+            ? cancelledOrExpiredOrders
+            : safeOrders;
+
+  const deepLinkETicketOrder =
+    searchParams.get('open') === 'eticket' &&
+    focusOrder &&
+    getStatus(focusOrder) === 'SUCCESS'
+      ? focusOrder
+      : null;
+
+  const eticketOrder = selectedETicketOrder || deepLinkETicketOrder;
+
+  const handleCloseETicket = () => {
+    setSelectedETicketOrder(null);
+    if (searchParams.has('open')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('open');
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -177,14 +234,20 @@ export default function OrderHistoryPage({
             <span className="oh-stat-num">{paidOrders.length}</span>
             <span className="oh-stat-label">Đơn thành công</span>
           </div>
-          {refundOrders.length > 0 && (
+          {refundPendingOrders.length > 0 && (
             <div className="oh-stat-box oh-stat-amber">
-              <span className="oh-stat-num">{refundOrders.length}</span>
-              <span className="oh-stat-label">Đơn hoàn tiền</span>
+              <span className="oh-stat-num">{refundPendingOrders.length}</span>
+              <span className="oh-stat-label">Chờ hoàn tiền</span>
+            </div>
+          )}
+          {refundedOrders.length > 0 && (
+            <div className="oh-stat-box oh-stat-cyan">
+              <span className="oh-stat-num">{refundedOrders.length}</span>
+              <span className="oh-stat-label">Đã hoàn tiền</span>
             </div>
           )}
           <div className="oh-stat-box">
-            <span className="oh-stat-num">{orders.length}</span>
+            <span className="oh-stat-num">{safeOrders.length}</span>
             <span className="oh-stat-label">Tổng giao dịch</span>
           </div>
         </div>
@@ -193,29 +256,48 @@ export default function OrderHistoryPage({
       {/* Tabs lọc trạng thái */}
       <div className="oh-tabs-bar">
         <button
-          onClick={() => setFilterTab('paid')}
-          className={`oh-tab-btn${filterTab === 'paid' ? ' active' : ''}`}
+          type="button"
+          onClick={() => handleTabChange(TICKET_TABS.PAID)}
+          className={`oh-tab-btn${filterTab === TICKET_TABS.PAID ? ' active' : ''}`}
         >
           <CheckCircle2 size={15} />
           <span>Vé đã mua ({paidOrders.length})</span>
         </button>
         <button
-          onClick={() => setFilterTab('refund')}
-          className={`oh-tab-btn${filterTab === 'refund' ? ' active' : ''}`}
+          type="button"
+          onClick={() => handleTabChange(TICKET_TABS.REFUND_PENDING)}
+          className={`oh-tab-btn${filterTab === TICKET_TABS.REFUND_PENDING ? ' active' : ''}`}
         >
           <RotateCcw size={15} />
-          <span>Hoàn tiền ({refundOrders.length})</span>
+          <span>Chờ hoàn tiền ({refundPendingOrders.length})</span>
+          {hasRefundBankAlert && (
+            <span
+              className="oh-tab-alert-dot"
+              title="Có đơn chờ hoàn tiền cần cập nhật hoặc sửa tài khoản ngân hàng"
+              aria-label="Cần cập nhật tài khoản ngân hàng"
+            />
+          )}
         </button>
         <button
-          onClick={() => setFilterTab('all')}
-          className={`oh-tab-btn${filterTab === 'all' ? ' active' : ''}`}
+          type="button"
+          onClick={() => handleTabChange(TICKET_TABS.REFUNDED)}
+          className={`oh-tab-btn${filterTab === TICKET_TABS.REFUNDED ? ' active' : ''}`}
+        >
+          <BadgeCheck size={15} />
+          <span>Đã hoàn tiền ({refundedOrders.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleTabChange(TICKET_TABS.ALL)}
+          className={`oh-tab-btn${filterTab === TICKET_TABS.ALL ? ' active' : ''}`}
         >
           <Ticket size={15} />
-          <span>Tất cả đơn ({orders.length})</span>
+          <span>Tất cả đơn ({safeOrders.length})</span>
         </button>
         <button
-          onClick={() => setFilterTab('cancelled')}
-          className={`oh-tab-btn${filterTab === 'cancelled' ? ' active' : ''}`}
+          type="button"
+          onClick={() => handleTabChange(TICKET_TABS.CANCELLED)}
+          className={`oh-tab-btn${filterTab === TICKET_TABS.CANCELLED ? ' active' : ''}`}
         >
           <XCircle size={15} />
           <span>Đã hủy / Hết hạn ({cancelledOrExpiredOrders.length})</span>
@@ -223,7 +305,7 @@ export default function OrderHistoryPage({
       </div>
 
       {/* Danh sách đơn hàng */}
-      {isLoading && orders.length === 0 ? (
+      {isLoading && safeOrders.length === 0 ? (
         <div className="glass-panel oh-empty-box">
           <div className="app-loading-spinner" />
           <p className="oh-empty-text">Đang đồng bộ lịch sử đặt vé từ cơ sở dữ liệu...</p>
@@ -234,11 +316,13 @@ export default function OrderHistoryPage({
             <Ticket size={32} color="var(--text-dim)" />
           </div>
           <h3 className="oh-empty-title">
-            {filterTab === 'paid'
+            {filterTab === TICKET_TABS.PAID
               ? 'Bạn chưa có vé sự kiện nào đã thanh toán'
-              : filterTab === 'refund'
-                ? 'Không có đơn hàng nào đang chờ hoàn tiền hoặc đã hoàn tiền'
-                : 'Không có đơn hàng nào trong danh mục này'}
+              : filterTab === TICKET_TABS.REFUND_PENDING
+                ? 'Không có đơn nào đang chờ hoàn tiền'
+                : filterTab === TICKET_TABS.REFUNDED
+                  ? 'Chưa có đơn nào được hoàn tiền'
+                  : 'Không có đơn hàng nào trong danh mục này'}
           </h3>
           <p className="oh-empty-text">
             Hãy khám phá các sự kiện hấp dẫn đang mở bán và đặt chỗ ngay hôm nay!
@@ -292,9 +376,12 @@ export default function OrderHistoryPage({
                 })
               : matchedEvent?.time || '';
 
+            const isHighlighted = Boolean(focusCode) && String(order.orderCode) === focusCode;
+
             return (
               <div
                 key={order.orderCode}
+                id={`order-card-${order.orderCode}`}
                 className={`glass-panel oh-order-card ${
                   currentStatus === 'SUCCESS'
                     ? 'is-paid'
@@ -303,7 +390,7 @@ export default function OrderHistoryPage({
                       : currentStatus === 'REFUNDED'
                         ? 'is-refunded'
                         : 'is-inactive'
-                }`}
+                }${isHighlighted ? ' is-highlighted' : ''}`}
               >
                 {/* Dải màu bên trái */}
                 <div
@@ -507,15 +594,15 @@ export default function OrderHistoryPage({
 
       {/* Modal hiển thị vé điện tử E-Ticket toàn màn hình */}
       <ETicketModal
-        isOpen={Boolean(selectedETicketOrder)}
-        onClose={() => setSelectedETicketOrder(null)}
-        order={selectedETicketOrder}
+        isOpen={Boolean(eticketOrder)}
+        onClose={handleCloseETicket}
+        order={eticketOrder}
         event={
-          selectedETicketOrder
+          eticketOrder
             ? events.find(
                 (e) =>
-                  (selectedETicketOrder.eventId && String(e.id) === String(selectedETicketOrder.eventId)) ||
-                  (selectedETicketOrder.eventTitle && e.title === selectedETicketOrder.eventTitle),
+                  (eticketOrder.eventId && String(e.id) === String(eticketOrder.eventId)) ||
+                  (eticketOrder.eventTitle && e.title === eticketOrder.eventTitle),
               )
             : null
         }

@@ -29,7 +29,6 @@ import {
   clearStoredAuth,
   getJwtExpiryMs,
   isJwtExpired,
-  notifyAuthExpired,
   readStoredUser,
 } from './utils/authSession.js';
 
@@ -500,7 +499,7 @@ function AppShell() {
   }
 
   // GIAO DIỆN DÀNH CHO KHÁCH HÀNG / NGƯỜI DÙNG THƯỜNG
-  const notifications = buildNotifications(cart, toast.history, toast.readIds);
+  const notifications = buildNotifications(cart, toast.readIds);
 
   return (
     <div className="app-shell">
@@ -591,7 +590,7 @@ function AppShell() {
               <NotificationsPage
                 user={user}
                 notifications={notifications}
-                onNavigate={(route) => navigateTo(route)}
+                onOpenLink={(path) => navigate(path)}
                 onRefresh={() => loadUserOrders(null, false)}
                 onBack={() => navigateTo('events')}
                 onRequireLogin={() => navigateTo('login')}

@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   Bell,
   CheckCheck,
-  Trash2,
   RefreshCw,
   AlertTriangle,
   CheckCircle2,
@@ -25,19 +24,18 @@ const LEVEL_ICONS = {
 const CATEGORY_LABELS = {
   refund: 'Hoàn tiền & Ngân hàng',
   order: 'Đơn đặt vé',
-  toast: 'Thông báo nổi (Toast)',
 };
 
 export default function NotificationsPage({
   user,
   notifications = [],
-  onNavigate,
+  onOpenLink,
   onRefresh,
   onBack,
   onRequireLogin,
 }) {
   const toast = useToast();
-  const [filter, setFilter] = useState('all'); // 'all' | 'unread' | 'refund' | 'toast'
+  const [filter, setFilter] = useState('all'); // 'all' | 'unread' | 'refund' | 'order'
 
   if (!user) {
     return (
@@ -59,12 +57,12 @@ export default function NotificationsPage({
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
   const refundCount = notifications.filter((n) => n.category === 'refund').length;
-  const toastCount = notifications.filter((n) => n.category === 'toast').length;
+  const orderCount = notifications.filter((n) => n.category === 'order').length;
 
   const filtered = notifications.filter((n) => {
     if (filter === 'unread') return !n.isRead;
     if (filter === 'refund') return n.category === 'refund';
-    if (filter === 'toast') return n.category === 'toast';
+    if (filter === 'order') return n.category === 'order';
     return true;
   });
 
@@ -72,10 +70,10 @@ export default function NotificationsPage({
     toast.markAllRead(notifications.map((n) => n.id));
   };
 
-  const handleActionClick = (item) => {
+  const openLink = (item, link) => {
     toast.markRead(item.id);
-    if (item.actionRoute && onNavigate) {
-      onNavigate(item.actionRoute);
+    if (link?.path?.startsWith('/')) {
+      onOpenLink?.(link.path);
     }
   };
 
@@ -100,16 +98,6 @@ export default function NotificationsPage({
               <span>Đánh dấu đã đọc tất cả ({unreadCount})</span>
             </button>
           )}
-          {toastCount > 0 && (
-            <button
-              type="button"
-              onClick={() => toast.clearHistory()}
-              className="ntf-action-btn danger"
-            >
-              <Trash2 size={14} />
-              <span>Xóa lịch sử Toast ({toastCount})</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -121,8 +109,8 @@ export default function NotificationsPage({
           <div>
             <h1 className="ntf-title">Trung tâm Thông báo</h1>
             <p className="ntf-subtitle">
-              Theo dõi toàn bộ cảnh báo tài khoản ngân hàng, trạng thái hoàn tiền và các thông báo
-              nổi (Toast) bạn có thể đã bỏ lỡ.
+              Theo dõi trạng thái đơn vé, hoàn tiền và cảnh báo tài khoản ngân hàng. Bấm vào thông
+              báo để đi tới đúng đơn hàng.
             </p>
           </div>
         </div>
@@ -153,10 +141,10 @@ export default function NotificationsPage({
         </button>
         <button
           type="button"
-          onClick={() => setFilter('toast')}
-          className={`ntf-tab${filter === 'toast' ? ' active' : ''}`}
+          onClick={() => setFilter('order')}
+          className={`ntf-tab${filter === 'order' ? ' active' : ''}`}
         >
-          Lịch sử Toast <span className="ntf-tab-count">{toastCount}</span>
+          Đơn đặt vé <span className="ntf-tab-count">{orderCount}</span>
         </button>
       </div>
 
@@ -165,7 +153,9 @@ export default function NotificationsPage({
         <div className="glass-panel ntf-empty">
           <Bell size={36} className="ntf-empty-icon" />
           <h3>Không có thông báo nào trong mục này</h3>
-          <p>Mọi thông báo mới về hoàn tiền, tài khoản ngân hàng và thao tác sẽ xuất hiện tại đây.</p>
+          <p>
+            Mọi thông báo mới về đơn đặt vé, hoàn tiền và tài khoản ngân hàng sẽ xuất hiện tại đây.
+          </p>
         </div>
       ) : (
         <div className="ntf-list">
@@ -178,7 +168,16 @@ export default function NotificationsPage({
             return (
               <div
                 key={item.id}
-                onClick={() => !item.isRead && toast.markRead(item.id)}
+                role="button"
+                tabIndex={0}
+                onClick={() => openLink(item, item.link)}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openLink(item, item.link);
+                  }
+                }}
                 className={`glass-panel ntf-card ntf-level-${item.level}${!item.isRead ? ' unread' : ''}`}
               >
                 {/* Số thứ tự #1, #2, #3... */}
@@ -205,19 +204,34 @@ export default function NotificationsPage({
                   <h3 className="ntf-item-title">{item.title}</h3>
                   <p className="ntf-item-msg">{item.message}</p>
 
-                  {item.actionLabel && (
+                  {(item.link || item.secondaryLink) && (
                     <div className="ntf-item-footer">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleActionClick(item);
-                        }}
-                        className="ntf-cta-btn"
-                      >
-                        <span>{item.actionLabel}</span>
-                        <ArrowRight size={14} />
-                      </button>
+                      {item.link && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openLink(item, item.link);
+                          }}
+                          className="ntf-cta-btn"
+                        >
+                          <span>{item.link.label}</span>
+                          <ArrowRight size={14} />
+                        </button>
+                      )}
+                      {item.secondaryLink && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openLink(item, item.secondaryLink);
+                          }}
+                          className="ntf-secondary-btn"
+                        >
+                          <span>{item.secondaryLink.label}</span>
+                          <ArrowRight size={14} />
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

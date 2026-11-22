@@ -33,15 +33,6 @@
   background: rgba(6, 182, 212, 0.24);
   color: #fff;
 }
-.ntf-action-btn.danger {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: #f87171;
-}
-.ntf-action-btn.danger:hover {
-  background: rgba(239, 68, 68, 0.22);
-  color: #fff;
-}
 
 .ntf-header {
   margin-bottom: 18px;
@@ -153,6 +144,10 @@
 }
 .ntf-card:hover {
   border-color: rgba(255, 255, 255, 0.22);
+}
+.ntf-card:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
 }
 .ntf-card.unread {
   background: rgba(255, 255, 255, 0.045);
@@ -274,6 +269,10 @@
 }
 .ntf-item-footer {
   margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .ntf-cta-btn {
   display: inline-flex;
@@ -291,5 +290,24 @@
 }
 .ntf-cta-btn:hover {
   background: rgba(245, 158, 11, 0.26);
+  color: #fff;
+}
+.ntf-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.ntf-secondary-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
   color: #fff;
 }

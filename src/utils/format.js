@@ -17,6 +17,53 @@ export const stripAccents = (val) =>
 export const toBankAccountName = (val) =>
   stripAccents(val).toUpperCase().replace(/[^A-Z ]/g, '').replace(/\s+/g, ' ').trimStart();
 
+// Tab của trang /my-tickets — giá trị dùng trực tiếp trên URL ?tab=
+export const TICKET_TABS = {
+  PAID: 'paid', // SUCCESS
+  REFUND_PENDING: 'refund-pending', // REFUND_PENDING
+  REFUNDED: 'refunded', // REFUNDED
+  ALL: 'all',
+  CANCELLED: 'cancelled', // CANCELLED | EXPIRED | FAILED
+};
+
+// Trả về tab phù hợp với trạng thái thực tế của đơn (dùng khi deep-link)
+export function getTicketTabByStatus(status) {
+  switch (status) {
+    case 'SUCCESS':
+      return TICKET_TABS.PAID;
+    case 'REFUND_PENDING':
+      return TICKET_TABS.REFUND_PENDING;
+    case 'REFUNDED':
+      return TICKET_TABS.REFUNDED;
+    case 'CANCELLED':
+    case 'EXPIRED':
+    case 'FAILED':
+      return TICKET_TABS.CANCELLED;
+    default:
+      return TICKET_TABS.ALL;
+  }
+}
+
+// Dựng URL deep-link tới một đơn trên trang vé
+export function buildTicketLink(tab, orderCode, { openETicket = false } = {}) {
+  const params = new URLSearchParams();
+  const validTab = Object.values(TICKET_TABS).includes(tab) ? tab : TICKET_TABS.PAID;
+  params.set('tab', validTab);
+  const codeStr = orderCode !== undefined && orderCode !== null ? String(orderCode).trim() : '';
+  if (codeStr) {
+    params.set('order', codeStr);
+    if (openETicket) {
+      params.set('open', 'eticket');
+    }
+  }
+  return `/my-tickets?${params.toString()}`;
+}
+
+const eventLink = (order) =>
+  order?.eventId
+    ? { path: `/events/${encodeURIComponent(String(order.eventId))}`, label: 'Xem sự kiện' }
+    : null;
+
 const NOTIF_TIMES_KEY = 'sellticket_notif_times';
 
 const loadNotifTimes = () => {
@@ -37,12 +84,10 @@ const saveNotifTimes = (map) => {
 };
 
 /**
- * Tổng hợp danh sách thông báo cho User từ 2 nguồn:
- * 1) Trạng thái đơn hàng & hoàn tiền thực tế từ Database (orders)
- * 2) Lịch sử các thông báo nổi (Toast) đã xuất hiện trong phiên/trình duyệt
+ * Tổng hợp danh sách thông báo nghiệp vụ cho User từ trạng thái đơn hàng & hoàn tiền thực tế (orders).
  * Sắp xếp: Thông báo MỚI NHẤT luôn ở trên đầu (#1), không bị nhảy vị trí khi bấm đọc.
  */
-export function buildNotifications(orders = [], toastHistory = [], readIds = []) {
+export function buildNotifications(orders = [], readIds = []) {
   const readSet = new Set(Array.isArray(readIds) ? readIds : []);
   const savedTimes = loadNotifTimes();
   const isFirstInit = savedTimes === null;
@@ -78,8 +123,9 @@ export function buildNotifications(orders = [], toastHistory = [], readIds = [])
         isRead: readSet.has(id),
         title: `Đơn #${code}: Sai thông tin tài khoản ngân hàng`,
         message: `Admin báo thông tin TK nhận hoàn tiền chưa đúng: "${order.refundBankError}". Vui lòng sửa lại để nhận khoản hoàn ${amountStr}.`,
-        actionLabel: 'Vào Hồ sơ sửa lại ngay',
-        actionRoute: 'profile',
+        orderCode: code,
+        link: { path: '/profile#bank', label: 'Vào Hồ sơ sửa lại ngay' },
+        secondaryLink: { path: buildTicketLink(TICKET_TABS.REFUND_PENDING, code), label: 'Xem đơn' },
         createdAt: resolveTime(id, order.createdAt, true),
       });
     } else if (status === 'REFUND_PENDING' && !order.refundBank) {
@@ -92,8 +138,9 @@ export function buildNotifications(orders = [], toastHistory = [], readIds = [])
         isRead: readSet.has(id),
         title: `Đơn #${code}: Chưa có tài khoản ngân hàng nhận hoàn tiền`,
         message: `Đơn (${evTitle}) đã hủy/quá hạn. Khoản tiền ${amountStr} đang chờ hoàn lại nhưng bạn chưa cập nhật TK ngân hàng.`,
-        actionLabel: 'Cập nhật TK ngân hàng',
-        actionRoute: 'profile',
+        orderCode: code,
+        link: { path: '/profile#bank', label: 'Cập nhật TK ngân hàng' },
+        secondaryLink: { path: buildTicketLink(TICKET_TABS.REFUND_PENDING, code), label: 'Xem đơn' },
         createdAt: resolveTime(id, order.createdAt, false),
       });
     } else if (status === 'REFUND_PENDING' && order.refundBank) {
@@ -106,8 +153,12 @@ export function buildNotifications(orders = [], toastHistory = [], readIds = [])
         isRead: readSet.has(id),
         title: `Đơn #${code}: Đang chờ Admin hoàn tiền (${amountStr})`,
         message: `Thông tin TK ${order.refundBank.bankShortName} - ${order.refundBank.bankAccountNo} đã ghi nhận. Đang chờ Admin chuyển khoản hoàn tiền.`,
-        actionLabel: 'Xem đơn hoàn tiền',
-        actionRoute: 'my-tickets',
+        orderCode: code,
+        link: {
+          path: buildTicketLink(TICKET_TABS.REFUND_PENDING, code),
+          label: 'Xem đơn chờ hoàn tiền',
+        },
+        secondaryLink: eventLink(order),
         createdAt: resolveTime(id, order.createdAt, false),
       });
     } else if (status === 'REFUNDED') {
@@ -123,8 +174,9 @@ export function buildNotifications(orders = [], toastHistory = [], readIds = [])
         message: snap
           ? `Admin đã chuyển khoản ${amountStr} về TK ${snap.bankShortName} - ${snap.bankAccountNo} (${snap.bankAccountName}).`
           : `Quản trị viên đã hoàn trả ${amountStr} của đơn hàng này về tài khoản ngân hàng của bạn.`,
-        actionLabel: 'Xem chi tiết đơn',
-        actionRoute: 'my-tickets',
+        orderCode: code,
+        link: { path: buildTicketLink(TICKET_TABS.REFUNDED, code), label: 'Xem đơn đã hoàn tiền' },
+        secondaryLink: eventLink(order),
         createdAt: resolveTime(id, snap?.refundedAt || order.createdAt, Boolean(snap?.refundedAt)),
       });
     } else if (status === 'SUCCESS') {
@@ -137,8 +189,12 @@ export function buildNotifications(orders = [], toastHistory = [], readIds = [])
         isRead: readSet.has(id),
         title: `Đơn #${code}: Đặt vé thành công`,
         message: `Đã thanh toán thành công ${amountStr} cho sự kiện "${evTitle}".`,
-        actionLabel: 'Xem vé E-Ticket',
-        actionRoute: 'my-tickets',
+        orderCode: code,
+        link: {
+          path: buildTicketLink(TICKET_TABS.PAID, code, { openETicket: true }),
+          label: 'Xem vé E-Ticket',
+        },
+        secondaryLink: eventLink(order),
         createdAt: resolveTime(id, order.createdAt, false),
       });
     }
@@ -146,26 +202,6 @@ export function buildNotifications(orders = [], toastHistory = [], readIds = [])
 
   if (timesChanged) {
     saveNotifTimes(timesMap);
-  }
-
-  for (const t of Array.isArray(toastHistory) ? toastHistory : []) {
-    items.push({
-      id: t.id,
-      category: 'toast',
-      level: t.type || 'info',
-      urgent: false,
-      isRead: readSet.has(t.id),
-      title:
-        t.type === 'error'
-          ? 'Thông báo lỗi'
-          : t.type === 'warning'
-            ? 'Cảnh báo hệ thống'
-            : t.type === 'success'
-              ? 'Thao tác thành công'
-              : 'Thông báo hệ thống',
-      message: t.message,
-      createdAt: t.createdAt,
-    });
   }
 
   // Sắp xếp thuần theo thời gian: Thông báo MỚI NHẤT luôn ở trên đầu (#1)

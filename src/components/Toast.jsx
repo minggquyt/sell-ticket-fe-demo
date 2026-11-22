@@ -1,3 +1,4 @@
+// Toast chỉ hiển thị tạm thời, không lưu vào Trung tâm Thông báo. Thông báo nghiệp vụ được dựng từ đơn hàng ở utils/format.js#buildNotifications.
 import { useCallback, useRef, useState } from 'react';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { ToastContext } from './toastContext.js';
@@ -13,8 +14,6 @@ const TOAST_ICONS = {
 // Lỗi để lâu hơn (6s) để kịp đọc, các loại còn lại 4s
 const TOAST_DURATIONS = { success: 4000, warning: 4000, info: 4000, error: 6000 };
 const MAX_TOASTS = 3;
-const MAX_HISTORY = 40;
-const HISTORY_KEY = 'sellticket_toast_history';
 const READ_KEY = 'sellticket_notif_read';
 
 const loadJson = (key, fallback) => {
@@ -26,10 +25,28 @@ const loadJson = (key, fallback) => {
   }
 };
 
+const initReadIds = () => {
+  try {
+    localStorage.removeItem('sellticket_toast_history');
+  } catch {
+    // ignore storage error
+  }
+  const parsed = loadJson(READ_KEY, []);
+  if (!Array.isArray(parsed)) return [];
+  const cleaned = parsed.filter((id) => !(typeof id === 'string' && id.startsWith('toast-')));
+  if (cleaned.length !== parsed.length) {
+    try {
+      localStorage.setItem(READ_KEY, JSON.stringify(cleaned));
+    } catch {
+      // ignore storage error
+    }
+  }
+  return cleaned;
+};
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
-  const [history, setHistory] = useState(() => loadJson(HISTORY_KEY, []));
-  const [readIds, setReadIds] = useState(() => loadJson(READ_KEY, []));
+  const [readIds, setReadIds] = useState(initReadIds);
   const idRef = useRef(0);
 
   const dismiss = useCallback((id) => {
@@ -43,27 +60,11 @@ export function ToastProvider({ children }) {
     (type, message) => {
       idRef.current += 1;
       const id = idRef.current;
-      const histItem = {
-        id: `toast-${Date.now()}-${id}`,
-        type,
-        message: String(message || ''),
-        createdAt: new Date().toISOString(),
-      };
 
       setToasts((prev) => {
         const next = [...prev, { id, type, message, leaving: false }];
         // Chồng tối đa MAX_TOASTS: thừa thì bỏ cái cũ nhất
         return next.length > MAX_TOASTS ? next.slice(next.length - MAX_TOASTS) : next;
-      });
-
-      setHistory((prev) => {
-        const next = [histItem, ...prev].slice(0, MAX_HISTORY);
-        try {
-          localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-        } catch {
-          // ignore storage quota error
-        }
-        return next;
       });
 
       setTimeout(() => dismiss(id), TOAST_DURATIONS[type] || 4000);
@@ -96,25 +97,14 @@ export function ToastProvider({ children }) {
     });
   }, []);
 
-  const clearHistory = useCallback(() => {
-    setHistory([]);
-    try {
-      localStorage.removeItem(HISTORY_KEY);
-    } catch {
-      // ignore
-    }
-  }, []);
-
   const toast = {
     success: (message) => push('success', message),
     error: (message) => push('error', message),
     warning: (message) => push('warning', message),
     info: (message) => push('info', message),
-    history,
     readIds,
     markRead,
     markAllRead,
-    clearHistory,
   };
 
   return (
