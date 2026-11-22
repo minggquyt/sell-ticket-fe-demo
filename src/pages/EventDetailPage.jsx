@@ -632,6 +632,9 @@ export default function EventDetailPage({
   const totalZoneCount = Object.values(zoneQuantities).reduce((acc, val) => acc + (val || 0), 0);
 
   const handleUpdateZoneQty = (zoneName, delta) => {
+    // Nếu đang giữ ghế - không cho chọn các ghế khác
+    if(isReserved) return;
+
     const current = zoneQuantities[zoneName] || 0;
     const available =
       zoneRemaining[zoneName] ?? (event.zones?.find((z) => z.id === zoneName)?.remaining || 0);
@@ -1069,6 +1072,8 @@ export default function EventDetailPage({
       if (seatIdsToCheckout.length === 0) {
         throw new Error('Không tìm thấy danh sách ghế cần thanh toán. Vui lòng thực hiện lại.');
       }
+
+      console.log("bắt đầu thanh toán")
 
       const checkoutData = await startCheckout({ seatIds: seatIdsToCheckout }, token);
       const orderCode = checkoutData?.orderCode;
