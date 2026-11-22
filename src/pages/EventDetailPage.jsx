@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -38,6 +38,7 @@ import {
   RESERVATION_CHANGED_EVENT,
   clearReservation,
   formatCountdown,
+  getActiveSessions,
   getSessionEffectiveExpiryMs,
   readReservation,
   saveReservation,
@@ -48,13 +49,19 @@ import { useToast } from '../components/toastContext.js';
 import SeatSelector from '../components/SeatSelector.jsx';
 import ZoneSelector from '../components/ZoneSelector.jsx';
 import BookingSummary from '../components/BookingSummary.jsx';
-import ETicketModal from '../components/ETicketModal.jsx';
 import './EventDetailPage.css';
+
+// Hàm hỗ trợ gán màu sắc đẹp mắt cho từng zone dựa theo tên
+const getZoneColor = (name) => {
+  const upper = (name || '').toUpperCase();
+  if (upper.includes('VIP')) return '#ec4899'; // Hồng
+  if (upper.includes('REGULAR') || upper.includes('STD')) return '#3b82f6'; // Xanh dương
+  return '#10b981'; // Xanh lá mặc định
+};
 
 export default function EventDetailPage({
   event,
   user,
-  userOrders = [],
   occupiedSeats: initialOccupiedSeats,
   zoneRemaining: initialZoneRemaining,
   isUpcoming: propIsUpcoming,
@@ -88,8 +95,6 @@ export default function EventDetailPage({
   const [bookingStep, setBookingStep] = useState('booking');
   // Thông tin đơn hàng đã xác thực thanh toán thành công từ Backend
   const [paidOrderInfo, setPaidOrderInfo] = useState(null);
-  // Xem lại vé điện tử E-Ticket bằng Modal
-  const [viewingETicketOrder, setViewingETicketOrder] = useState(null);
   // Phiên thanh toán đang dở còn hạn được khôi phục lại (cho phép bấm Tiếp tục thanh toán)
   const [pendingPayment, setPendingPayment] = useState(null);
   const verifyingPendingRef = useRef(null);
@@ -97,8 +102,6 @@ export default function EventDetailPage({
     email: user?.email || '',
     fullName: user?.name || '',
   };
-
-  const getOrderStatus = (o) => o?.status || o?.orderStatus || '';
 
   // 1. Khi người dùng click vào nút Thanh toán trên giao diện giữ ghế
   const handlePrePaymentClick = () => {
@@ -113,26 +116,6 @@ export default function EventDetailPage({
     }
     handlePayment();
   };
-
-  // Danh sách các đơn vé đã thanh toán thành công (SUCCESS) của user tại đúng sự kiện này
-  const myPurchasedOrdersForEvent = Array.isArray(userOrders)
-    ? userOrders.filter(
-      (o) =>
-        getOrderStatus(o) === 'SUCCESS' &&
-        ((o.eventId && String(o.eventId) === String(event?.id)) ||
-          (o.eventTitle && o.eventTitle === event?.title)),
-    )
-    : [];
-
-  // Danh sách các đơn chờ hoàn tiền / đã hoàn tiền của user tại sự kiện này
-  const myRefundOrdersForEvent = Array.isArray(userOrders)
-    ? userOrders.filter(
-      (o) =>
-        (getOrderStatus(o) === 'REFUND_PENDING' || getOrderStatus(o) === 'REFUNDED') &&
-        ((o.eventId && String(o.eventId) === String(event?.id)) ||
-          (o.eventTitle && o.eventTitle === event?.title)),
-    )
-    : [];
 
   // SEATED-BASED & GENERAL BOOKING STATE
   const [occupiedSeats, setOccupiedSeats] = useState(() =>
@@ -155,11 +138,16 @@ export default function EventDetailPage({
   const [countdownSeconds, setCountdownSeconds] = useState(0);
   // Trạng thái xử lý thanh toán
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  // Trạng thái đang gửi request giữ ghế (chống race / spam click)
+  const [isReserving, setIsReserving] = useState(false);
+  // Phiên giữ chỗ / thanh toán đang hoạt động ở sự kiện khác (nếu có)
+  const [otherEventSession, setOtherEventSession] = useState(null);
   const reservedStateRef = useRef({
     isReserved: false,
     reservedUntilTime: null,
     pendingOrderCode: null,
   });
+  const latestRef = useRef({});
   useEffect(() => {
     reservedStateRef.current = {
       isReserved,
@@ -184,24 +172,20 @@ export default function EventDetailPage({
     }
   };
 
-  // Hàm hỗ trợ gán màu sắc đẹp mắt cho từng zone dựa theo tên
-  const getZoneColor = (name) => {
-    const upper = (name || '').toUpperCase();
-    if (upper.includes('VIP')) return '#ec4899'; // Hồng
-    if (upper.includes('REGULAR') || upper.includes('STD')) return '#3b82f6'; // Xanh dương
-    return '#10b981'; // Xanh lá mặc định
-  };
+  const reloadBackendEventId = event?.id;
+  const isBackendSeated = Boolean(event?.is_seated || event?.event_type === 'SEAT_BASED');
+  const currentUserId = user?.id;
 
   // Hàm đồng bộ và tải lại danh sách ghế/khu vực từ Backend
-  const reloadBackendSeats = () => {
-    if (!event?.id) return;
+  const reloadBackendSeats = useCallback(() => {
+    if (!reloadBackendEventId) return;
 
-    fetchSeatsByEvent(event.id)
+    fetchSeatsByEvent(reloadBackendEventId)
       .then((seats) => {
         if (!seats || seats.length === 0) return;
         const now = new Date();
         // 1. Phân loại logic cho SEATED-BASED
-        if (event.is_seated || event.event_type === 'SEAT_BASED') {
+        if (isBackendSeated) {
           setBackendSeats(seats);
           const occupied = seats
             .filter((s) => {
@@ -210,7 +194,7 @@ export default function EventDetailPage({
                 const isExpired = s.reserved_until ? new Date(s.reserved_until) < now : false;
                 if (isExpired) return false;
                 // Nếu là ghế do chính tài khoản này đang giữ thì không hiển thị là đã bị chiếm
-                const isMySeat = user?.id && String(s.reserved_by) === String(user.id);
+                const isMySeat = currentUserId && String(s.reserved_by) === String(currentUserId);
                 if (isMySeat) return false;
                 return true;
               }
@@ -260,19 +244,23 @@ export default function EventDetailPage({
         }
       })
       .catch((err) => console.warn('Seats/Zones fetch error:', err));
-  };
+  }, [reloadBackendEventId, isBackendSeated, currentUserId]);
 
   // Đồng bộ lại khi prop thay đổi (ví dụ đổi sự kiện)
   useEffect(() => {
-    if (initialOccupiedSeats) {
+    if (!initialOccupiedSeats) return undefined;
+    const timer = setTimeout(() => {
       setOccupiedSeats(new Set(initialOccupiedSeats));
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [initialOccupiedSeats]);
 
   useEffect(() => {
-    if (initialZoneRemaining && Object.keys(initialZoneRemaining).length > 0) {
+    if (!initialZoneRemaining || Object.keys(initialZoneRemaining).length === 0) return undefined;
+    const timer = setTimeout(() => {
       setZoneRemaining({ ...initialZoneRemaining });
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [initialZoneRemaining]);
 
   // Đồng bộ giá vé ghế chính xác từ Backend hoặc cấu hình sự kiện
@@ -292,14 +280,14 @@ export default function EventDetailPage({
   // Đồng bộ trực tiếp danh sách ghế từ Backend khi khởi tạo hoặc khi event/user đổi
   useEffect(() => {
     reloadBackendSeats();
-  }, [event?.id, user?.id]);
+  }, [reloadBackendSeats]);
 
   // Polling realtime ghế (duyệt 31/10/2026, 3 giây): tải lại trạng thái ghế
   // liên tục để thấy ghế người khác giữ/mua mà không cần F5. Tạm dừng khi
   // tab bị ẩn, quay lại tab thì tải ngay + chạy tiếp; dừng hẳn khi rời trang.
   // Chỉ đọc lại ghế (kể cả zone), không đụng ghế đang chọn / đếm ngược / thanh toán.
   useEffect(() => {
-    if (!event?.id) return;
+    if (!event?.id) return undefined;
     let intervalId = null;
     const startPolling = () => {
       if (intervalId !== null) return;
@@ -327,7 +315,7 @@ export default function EventDetailPage({
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [event?.id, user?.id]);
+  }, [event?.id, reloadBackendSeats]);
 
   // --- HÀM HIỂN THỊ MÀN HÌNH E-TICKET KHI ĐƠN HÀNG ĐƯỢC XÁC NHẬN SUCCESS ---
   const triggerOrderSuccessUI = (orderData, showConfetti = true) => {
@@ -394,11 +382,6 @@ export default function EventDetailPage({
     }
 
     reloadBackendSeats();
-  };
-
-  // Cho phép người dùng bấm xem lại chi tiết E-Ticket của bất kỳ đơn nào đã mua ngay trên trang sự kiện
-  const handleViewPurchasedOrder = (order) => {
-    setViewingETicketOrder(order);
   };
 
   // --- HÀM XỬ LÝ HỦY GIỮ GHẾ (Giải phóng ghế trên Database & hủy link PayOS nếu có) ---
@@ -492,10 +475,8 @@ export default function EventDetailPage({
   };
 
   // Format schema ghế từ BE
-  const [groupedSeats, setGroupedSeats] = useState({});
-
-  useEffect(() => {
-    if (!backendSeats || backendSeats.length === 0) return;
+  const groupedSeats = useMemo(() => {
+    if (!backendSeats || backendSeats.length === 0) return {};
 
     const layout = deriveSeatLayout(backendSeats);
     const formattedRows = {};
@@ -509,11 +490,25 @@ export default function EventDetailPage({
       }));
     });
 
-    setGroupedSeats(formattedRows);
+    return formattedRows;
   }, [backendSeats]);
 
   useEffect(() => {
-    if (!reservedUntilTime) return;
+    latestRef.current = {
+      getAuthContext,
+      handleCancelReservation,
+      onRefreshOrders,
+      pendingPayment,
+      reloadBackendSeats,
+      singleSeatTier,
+      toast,
+      triggerOrderSuccessUI,
+      userToken: user?.token,
+    };
+  });
+
+  useEffect(() => {
+    if (!reservedUntilTime) return undefined;
 
     const interval = setInterval(() => {
       const now = new Date().getTime();
@@ -526,13 +521,23 @@ export default function EventDetailPage({
         clearInterval(interval);
         const currentSaved = readReservation(event?.id);
         if (!currentSaved) return;
+        const {
+          getAuthContext: getLiveAuth,
+          handleCancelReservation: cancelLiveReservation,
+          onRefreshOrders: refreshLiveOrders,
+          pendingPayment: livePending,
+          reloadBackendSeats: reloadLiveSeats,
+          toast: liveToast,
+          triggerOrderSuccessUI: showLiveSuccessUI,
+        } = latestRef.current;
+
         if (pendingPayment?.orderCode) {
-          const { token } = getAuthContext();
+          const { token } = getLiveAuth();
           const confirmDeadlineMs = getSessionEffectiveExpiryMs({
             ...currentSaved,
             step: 'PAYMENT_PROCESSING',
-            expiresAt: pendingPayment.expiresAt || currentSaved.expiresAt || reservedUntilTime,
-            confirmUntil: pendingPayment.confirmUntil || currentSaved.confirmUntil,
+            expiresAt: livePending?.expiresAt || currentSaved.expiresAt || reservedUntilTime,
+            confirmUntil: livePending?.confirmUntil || currentSaved.confirmUntil,
           });
           if (Number.isFinite(confirmDeadlineMs) && confirmDeadlineMs > Date.now()) {
             // Đang trong cửa sổ CONFIRMING (120..150s): tuyệt đối không hủy đơn, cập nhật đếm ngược đến confirmUntil
@@ -543,7 +548,7 @@ export default function EventDetailPage({
           fetchOrderPayment(pendingPayment.orderCode, token, { sync: false })
             .then((orderData) => {
               if (orderData?.status === 'SUCCESS') {
-                triggerOrderSuccessUI(orderData, true);
+                showLiveSuccessUI(orderData, true);
                 return;
               }
               clearReservation(event?.id);
@@ -556,14 +561,14 @@ export default function EventDetailPage({
                 setReservedZoneSeats([]);
                 setZoneQuantities({});
               }
-              reloadBackendSeats();
-              if (onRefreshOrders) onRefreshOrders();
+              reloadLiveSeats();
+              if (refreshLiveOrders) refreshLiveOrders();
               if (orderData?.status === 'REFUND_PENDING') {
-                toast.warning(
+                liveToast.warning(
                   `Đơn #${orderData.orderCode} thanh toán muộn. Đã chuyển sang Chờ hoàn tiền!`,
                 );
               } else {
-                toast.warning('Phiên thanh toán đã hết hạn. Các ghế đã được mở lại!');
+                liveToast.warning('Phiên thanh toán đã hết hạn. Các ghế đã được mở lại!');
               }
             })
             .catch(() => {
@@ -571,24 +576,56 @@ export default function EventDetailPage({
               setPendingPayment(null);
               setIsReserved(false);
               setReservedUntilTime(null);
-              reloadBackendSeats();
+              reloadLiveSeats();
             });
         } else {
           // Hết thời gian giữ ghế: tự động giải phóng ghế trên Backend và khôi phục giao diện
-          handleCancelReservation(true).then(() => {
-            toast.warning('Thời gian giữ ghế đã hết. Các ghế đã được mở lại!');
+          cancelLiveReservation(true).then(() => {
+            liveToast.warning('Thời gian giữ ghế đã hết. Các ghế đã được mở lại!');
           });
         }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [reservedUntilTime, pendingPayment?.orderCode]);
+  }, [reservedUntilTime, pendingPayment?.orderCode, event?.id, isSeated]);
+
+  const totalZoneCount = Object.values(zoneQuantities).reduce((acc, val) => acc + (val || 0), 0);
+  const heldCount = isSeated
+    ? selectedSeats.length || reservedSeatIds.length
+    : totalZoneCount || reservedSeatIds.length;
+  const isSelectionLocked =
+    isReserved || isReserving || isProcessingPayment || Boolean(otherEventSession);
+
+  const otherSessionLabel = otherEventSession
+    ? otherEventSession.step === 'PAYMENT_PROCESSING' && otherEventSession.orderCode
+      ? `thanh toán đơn #${otherEventSession.orderCode}`
+      : 'giữ ghế'
+    : '';
+  const otherEventTitle = otherEventSession?.eventTitle || 'sự kiện khác';
+
+  const lockMessage =
+    isReserved && pendingPayment
+      ? `Đơn #${pendingPayment.orderCode} đang chờ thanh toán. Bấm Tiếp tục thanh toán hoặc bấm Hủy đơn / Chọn lại ghế để chọn ghế khác.`
+      : isReserved
+        ? `Bạn đang giữ ${heldCount} ${isSeated ? 'ghế' : 'vé'}. Bấm Thanh toán QR để hoàn tất, hoặc bấm Hủy giữ ghế / Chọn lại nếu muốn đổi ghế khác.`
+        : otherEventSession
+          ? `Bạn đang có phiên ${otherSessionLabel} tại sự kiện "${otherEventTitle}". Vui lòng hoàn tất hoặc hủy ở thanh thông báo phía trên để đặt vé sự kiện này.`
+          : isReserving
+            ? 'Đang giữ chỗ, vui lòng chờ giây lát...'
+            : isProcessingPayment
+              ? 'Đang tạo mã QR thanh toán, vui lòng chờ giây lát...'
+              : '';
 
   // --- LOGIC SEATED-BASED ---
   const handleToggleSeat = (seat, tier = singleSeatTier) => {
-    // Nếu đang trong trạng thái giữ ghế (đếm ngược), không cho phép thay đổi lựa chọn
-    if (isReserved) return;
+    // Khóa chọn ghế khi đang giữ chỗ / chờ thanh toán / đang gửi request / có phiên sự kiện khác
+    if (isSelectionLocked) {
+      if (!isReserving && !isProcessingPayment && lockMessage) {
+        toast.info(lockMessage);
+      }
+      return;
+    }
 
     const seatId = seat.id;
     const seatCode = seat.displayCode || seat.seat_number;
@@ -602,7 +639,9 @@ export default function EventDetailPage({
       );
     } else {
       if (selectedSeats.length >= MAX_TICKETS_PER_ORDER) {
-        toast.warning('Bạn chỉ được chọn tối đa 4 ghế cho mỗi đơn hàng theo quy định!');
+        toast.warning(
+          `Bạn chỉ được chọn tối đa ${MAX_TICKETS_PER_ORDER} ghế cho mỗi đơn hàng theo quy định!`,
+        );
         return;
       }
 
@@ -629,11 +668,14 @@ export default function EventDetailPage({
   }, 0);
 
   // --- LOGIC ZONE-BASED ---
-  const totalZoneCount = Object.values(zoneQuantities).reduce((acc, val) => acc + (val || 0), 0);
-
   const handleUpdateZoneQty = (zoneName, delta) => {
-    // Nếu đang giữ ghế - không cho chọn các ghế khác
-    if(isReserved) return;
+    // Khóa chọn khu vực khi đang giữ chỗ / chờ thanh toán / đang gửi request / có phiên sự kiện khác
+    if (isSelectionLocked) {
+      if (!isReserving && !isProcessingPayment && lockMessage) {
+        toast.info(lockMessage);
+      }
+      return;
+    }
 
     const current = zoneQuantities[zoneName] || 0;
     const available =
@@ -641,7 +683,9 @@ export default function EventDetailPage({
 
     if (delta > 0) {
       if (totalZoneCount >= MAX_TICKETS_PER_ORDER) {
-        toast.warning('Bạn chỉ được đặt tối đa 5 vé trong sự kiện Zone-based này!');
+        toast.warning(
+          `Bạn chỉ được đặt tối đa ${MAX_TICKETS_PER_ORDER} vé trong sự kiện Zone-based này!`,
+        );
         return;
       }
       if (current >= available) {
@@ -673,7 +717,8 @@ export default function EventDetailPage({
 
   // --- KHÔI PHỤC PHIÊN GIỮ GHẾ / PHIÊN THANH TOÁN ĐANG DỞ CÒN HẠN KHI REFRESH HOẶC VÀO LẠI ---
   useEffect(() => {
-    if (!event?.id) return;
+    if (!event?.id) return undefined;
+    let cancelled = false;
 
     // Phiên giữ ghế này có phải của người đang dùng trình duyệt này không
     const ownsReservation = (parsedData) => {
@@ -684,6 +729,7 @@ export default function EventDetailPage({
 
     const restoreSeatsUI = (rawSeats = []) => {
       if (!Array.isArray(rawSeats) || rawSeats.length === 0) return;
+      const liveTier = latestRef.current.singleSeatTier || {};
       const normalizedIds = rawSeats.map((s) => s.id || s.seatId || s.seat_id).filter(Boolean);
       setReservedSeatIds(normalizedIds);
       if (isSeated) {
@@ -691,9 +737,9 @@ export default function EventDetailPage({
           rawSeats.map((seat) => ({
             id: seat.id || seat.seatId || seat.seat_id,
             code: seat.seat_number || seat.seatNumber,
-            tier: seat.zone_name || seat.zoneName || singleSeatTier.name || 'Standard',
-            price: Number(seat.price) || singleSeatTier.price,
-            color: singleSeatTier.color || '#3b82f6',
+            tier: seat.zone_name || seat.zoneName || liveTier.name || 'Standard',
+            price: Number(seat.price) || liveTier.price,
+            color: liveTier.color || '#3b82f6',
           })),
         );
       } else {
@@ -727,10 +773,11 @@ export default function EventDetailPage({
         setReservedZoneSeats([]);
         setZoneQuantities({});
       }
-      reloadBackendSeats();
+      latestRef.current.reloadBackendSeats?.();
     };
 
     const applySessionToUI = (session) => {
+      setOtherEventSession(null);
       restoreSeatsUI(session.seats);
       setIsReserved(true);
       setReservedUntilTime(session.expiresAt || session.reservedUntil);
@@ -748,17 +795,43 @@ export default function EventDetailPage({
       }
     };
 
+    const syncOtherEventSession = () => {
+      const { userId: authUserId } = latestRef.current.getAuthContext();
+      const activeUserId = user?.id || authUserId;
+      if (!activeUserId) {
+        setOtherEventSession(null);
+        return null;
+      }
+      const found =
+        getActiveSessions(activeUserId).find((s) => String(s.eventId) !== String(event.id)) || null;
+      setOtherEventSession(found);
+      return found;
+    };
+
     const checkAndRestoreReservation = () => {
+      syncOtherEventSession();
       const parsedData = readReservation(event.id);
       if (!parsedData) {
-        const { token } = getAuthContext();
+        const { token } = latestRef.current.getAuthContext();
         if (!token || !user?.id) return;
         if (verifyingPendingRef.current === 'SESSION_SYNC') return;
         verifyingPendingRef.current = 'SESSION_SYNC';
 
         fetchMyActiveSession(token)
           .then((serverSession) => {
-            if (!serverSession || String(serverSession.eventId) !== String(event.id)) return;
+            if (cancelled) return;
+            if (!serverSession) {
+              setOtherEventSession(null);
+              return;
+            }
+            if (String(serverSession.eventId) !== String(event.id)) {
+              const savedOther = syncServerReservationToStorage(user.id, serverSession, {
+                silent: true,
+              });
+              setOtherEventSession(savedOther || serverSession);
+              return;
+            }
+            setOtherEventSession(null);
             const saved = syncServerReservationToStorage(user.id, serverSession, { silent: true });
             if (saved) applySessionToUI(saved);
           })
@@ -783,23 +856,29 @@ export default function EventDetailPage({
           return;
         }
 
-        const { token } = getAuthContext();
+        const { token } = latestRef.current.getAuthContext();
         if (!parsedData.orderCode || !token) return;
         if (verifyingPendingRef.current === parsedData.orderCode) return;
         verifyingPendingRef.current = parsedData.orderCode;
 
         fetchOrderPayment(parsedData.orderCode, token, { sync: false })
           .then((orderData) => {
+            if (cancelled) return;
+            const {
+              onRefreshOrders: refreshLiveOrders,
+              toast: liveToast,
+              triggerOrderSuccessUI: showLiveSuccessUI,
+            } = latestRef.current;
             const st = orderData?.status;
             if (st === 'SUCCESS') {
-              triggerOrderSuccessUI(orderData, true);
+              showLiveSuccessUI(orderData, true);
               return;
             }
             if (st === 'REFUND_PENDING') {
               clearReservation(event.id);
               resetLocalReservationUI();
-              if (onRefreshOrders) onRefreshOrders();
-              toast.warning(
+              if (refreshLiveOrders) refreshLiveOrders();
+              liveToast.warning(
                 `Đơn #${orderData.orderCode} thanh toán sau khi hết hạn/hủy. Đã chuyển sang Chờ hoàn tiền!`,
               );
               return;
@@ -807,7 +886,7 @@ export default function EventDetailPage({
             if (st !== 'PAYMENT_PROCESSING') {
               clearReservation(event.id);
               resetLocalReservationUI();
-              if (onRefreshOrders) onRefreshOrders();
+              if (refreshLiveOrders) refreshLiveOrders();
               return;
             }
 
@@ -820,7 +899,7 @@ export default function EventDetailPage({
             if (new Date(serverConfirmUntil).getTime() <= Date.now()) {
               clearReservation(event.id);
               resetLocalReservationUI();
-              if (onRefreshOrders) onRefreshOrders();
+              if (refreshLiveOrders) refreshLiveOrders();
               return;
             }
 
@@ -859,6 +938,7 @@ export default function EventDetailPage({
             });
           })
           .catch((err) => {
+            if (cancelled) return;
             if (err?.status === 404 || err?.message?.includes('Không tìm thấy')) {
               clearReservation(event.id);
               resetLocalReservationUI();
@@ -881,13 +961,16 @@ export default function EventDetailPage({
       } else {
         // Nếu đã quá hạn hoặc khác user -> Xóa rác trong localStorage và giải phóng ghế trên Backend
         clearReservation(event.id);
+        if (reservedStateRef.current.isReserved) {
+          resetLocalReservationUI();
+        }
         if (parsedData.seats && Array.isArray(parsedData.seats)) {
           const ids = parsedData.seats.map((s) => s.id).filter(Boolean);
           if (ids.length > 0) {
-            const token = user?.token;
-            releaseSeats(parsedData.userId || user?.id, ids, token, null, parsedData.guestEmail || null)
-              .then(() => reloadBackendSeats())
-              .catch(() => { });
+            const token = latestRef.current.userToken;
+            releaseSeats(parsedData.userId || user?.id, ids, token, null)
+              .then(() => latestRef.current.reloadBackendSeats?.())
+              .catch(() => {});
           }
         }
       }
@@ -897,6 +980,7 @@ export default function EventDetailPage({
 
     // Đồng bộ nếu người dùng hủy/cập nhật từ Sticky Banner hoặc thiết bị khác
     const handleReservationChanged = () => {
+      syncOtherEventSession();
       const current = readReservation(event.id);
       if (!current) {
         if (reservedStateRef.current.isReserved) resetLocalReservationUI();
@@ -928,6 +1012,8 @@ export default function EventDetailPage({
     window.addEventListener('storage', handleReservationChanged);
     window.addEventListener('pageshow', handlePageShow);
     return () => {
+      cancelled = true;
+      verifyingPendingRef.current = null;
       clearTimeout(initTimer);
       window.removeEventListener(RESERVATION_CHANGED_EVENT, handleReservationChanged);
       window.removeEventListener('storage', handleReservationChanged);
@@ -937,6 +1023,7 @@ export default function EventDetailPage({
 
   // --- XỬ LÝ GIỮ GHẾ ---
   const handleReserveSeats = async () => {
+    if (isReserving || isReserved || otherEventSession) return;
     if (!user) {
       toast.info('Vui lòng đăng nhập để giữ chỗ.');
       onRequireLogin?.();
@@ -947,6 +1034,7 @@ export default function EventDetailPage({
       return;
     }
 
+    setIsReserving(true);
     try {
       const token = user?.token;
       let seatIdsToCheckout = [];
@@ -972,7 +1060,21 @@ export default function EventDetailPage({
         const heldSeatsData = holdData?.seats || [];
 
         if (expiry) {
-          setReservedSeatIds(holdData?.seatIds || seatIdsToCheckout);
+          setOtherEventSession(null);
+          setReservedSeatIds(
+            holdData?.seatIds?.length > 0 ? holdData.seatIds : seatIdsToCheckout,
+          );
+          if (heldSeatsData.length > 0) {
+            setSelectedSeats(
+              heldSeatsData.map((seat) => ({
+                id: seat.id || seat.seatId || seat.seat_id,
+                code: seat.seat_number || seat.seatNumber,
+                tier: seat.zone_name || seat.zoneName || singleSeatTier.name || 'Standard',
+                price: Number(seat.price) || singleSeatTier.price,
+                color: singleSeatTier.color || '#3b82f6',
+              })),
+            );
+          }
           setReservedUntilTime(expiry);
           setIsReserved(true);
 
@@ -1005,37 +1107,36 @@ export default function EventDetailPage({
         const returnedSeatIds = holdData?.seatIds || [];
         const expiry = holdData?.reserved_until;
 
-        if (returnedSeatIds.length === 0) {
+        if (returnedSeatIds.length === 0 || !expiry) {
           throw new Error('Không nhận được thời gian giữ chỗ hoặc danh sách ghế từ hệ thống.');
         }
 
+        setOtherEventSession(null);
         setReservedZoneSeats(returnedSeats);
         setReservedSeatIds(returnedSeatIds);
         setReservedUntilTime(expiry);
         setIsReserved(true);
 
-        if (expiry) {
-          saveReservation(
-            event.id,
-            {
-              userId: user?.id,
-              guestEmail: activeGuest.email || null,
-              guestName: activeGuest.fullName || null,
-              step: 'RESERVED',
-              eventId: event.id,
-              eventTitle: event.title,
-              totalAmount: returnedSeats.reduce((s, r) => s + (Number(r.price) || 0), 0) || totalPrice,
-              reservedUntil: expiry,
-              seats: returnedSeats,
-            },
-          );
-        } else {
-          throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
-        }
+        saveReservation(
+          event.id,
+          {
+            userId: user?.id,
+            guestEmail: activeGuest.email || null,
+            guestName: activeGuest.fullName || null,
+            step: 'RESERVED',
+            eventId: event.id,
+            eventTitle: event.title,
+            totalAmount: returnedSeats.reduce((s, r) => s + (Number(r.price) || 0), 0) || totalPrice,
+            reservedUntil: expiry,
+            seats: returnedSeats,
+          },
+        );
       }
     } catch (err) {
       console.error('Lỗi giữ ghế:', err);
       toast.error(err.response?.data?.message || err.message || 'Có lỗi xảy ra khi giữ ghế!');
+    } finally {
+      setIsReserving(false);
     }
   };
 
@@ -1052,28 +1153,31 @@ export default function EventDetailPage({
 
       const token = user?.token;
 
-      let seatIdsToCheckout = [];
-      if (isSeated) {
-        seatIdsToCheckout = selectedSeats.map((s) => s.id).filter(Boolean);
-        if (seatIdsToCheckout.length === 0) {
-          seatIdsToCheckout = selectedSeats
-            .map((s) => {
-              const found = backendSeats.find(
-                (bs) => bs.seat_number === s.code || bs.seat_number === s.code.replace('-', ''),
-              );
-              return found?.id;
-            })
-            .filter(Boolean);
+      let seatIdsToCheckout =
+        Array.isArray(reservedSeatIds) && reservedSeatIds.length > 0
+          ? reservedSeatIds.filter(Boolean)
+          : [];
+      if (seatIdsToCheckout.length === 0) {
+        if (isSeated) {
+          seatIdsToCheckout = selectedSeats.map((s) => s.id).filter(Boolean);
+          if (seatIdsToCheckout.length === 0) {
+            seatIdsToCheckout = selectedSeats
+              .map((s) => {
+                const found = backendSeats.find(
+                  (bs) => bs.seat_number === s.code || bs.seat_number === s.code.replace('-', ''),
+                );
+                return found?.id;
+              })
+              .filter(Boolean);
+          }
+        } else {
+          seatIdsToCheckout = reservedZoneSeats.map((s) => s.id).filter(Boolean);
         }
-      } else {
-        seatIdsToCheckout = reservedZoneSeats.map((s) => s.id).filter(Boolean);
       }
 
       if (seatIdsToCheckout.length === 0) {
         throw new Error('Không tìm thấy danh sách ghế cần thanh toán. Vui lòng thực hiện lại.');
       }
-
-      console.log("bắt đầu thanh toán")
 
       const checkoutData = await startCheckout({ seatIds: seatIdsToCheckout }, token);
       const orderCode = checkoutData?.orderCode;
@@ -1190,7 +1294,9 @@ export default function EventDetailPage({
           <div className="detail-badges-row">
             <span className={`detail-badge ${isSeated ? 'badge-type-seated' : 'badge-type-zone'}`}>
               {isSeated ? <Armchair size={13} /> : <Layers size={13} />}
-              {isSeated ? 'Seated-based (max 5 ghế)' : 'Zone-based (max 5 vé)'}
+              {isSeated
+                ? `Seated-based (max ${MAX_TICKETS_PER_ORDER} ghế)`
+                : `Zone-based (max ${MAX_TICKETS_PER_ORDER} vé)`}
             </span>
             {isUpcoming && (
               <span className="badge-status-upcoming detail-badge">
@@ -1292,11 +1398,51 @@ export default function EventDetailPage({
                   {isUpcoming
                     ? 'Sự kiện sắp diễn ra - Hệ thống chưa mở bán vé chính thức.'
                     : isSeated
-                      ? `Chế độ Seated-based: Quy mô ${backendSeats.length || event?.totalSeats || 84} ghế (${Object.keys(groupedSeats).length || event?.rowsCount || 7} hàng) • Đồng giá ${formatVND(singleSeatTier.price)} / ghế (Tối đa 5 ghế).`
-                      : `Chế độ Zone-based: Đặt vé theo khu vực đứng/vé mở • Tổng ${Object.values(backendZones).reduce((sum, z) => sum + (z.total || 0), 0) || event?.totalTickets || 0} vé phát hành (Tối đa 5 vé).`}
+                      ? `Chế độ Seated-based: Quy mô ${backendSeats.length || event?.totalSeats || 84} ghế (${Object.keys(groupedSeats).length || event?.rowsCount || 7} hàng) • Đồng giá ${formatVND(singleSeatTier.price)} / ghế (Tối đa ${MAX_TICKETS_PER_ORDER} ghế).`
+                      : `Chế độ Zone-based: Đặt vé theo khu vực đứng/vé mở • Tổng ${Object.values(backendZones).reduce((sum, z) => sum + (z.total || 0), 0) || event?.totalTickets || 0} vé phát hành (Tối đa ${MAX_TICKETS_PER_ORDER} vé).`}
                 </span>
               </div>
             </div>
+
+            {!isUpcoming && (isReserved || otherEventSession) && (
+              <div className="detail-lock-notice" role="status">
+                <div className="detail-lock-notice-inner">
+                  {isReserved ? (
+                    <Clock size={18} color="var(--accent-amber)" className="detail-icon-fixed" />
+                  ) : (
+                    <AlertTriangle
+                      size={18}
+                      color="var(--accent-amber)"
+                      className="detail-icon-fixed"
+                    />
+                  )}
+                  <span className="detail-lock-notice-text">
+                    {isReserved && pendingPayment ? (
+                      <>
+                        Đơn <strong>#{pendingPayment.orderCode}</strong> đang chờ thanh toán. Bấm{' '}
+                        <strong>Tiếp tục thanh toán</strong> hoặc bấm{' '}
+                        <strong>Hủy đơn / Chọn lại ghế</strong> để chọn ghế khác.
+                      </>
+                    ) : isReserved ? (
+                      <>
+                        Bạn đang giữ{' '}
+                        <strong>
+                          {heldCount} {isSeated ? 'ghế' : 'vé'}
+                        </strong>
+                        . Bấm <strong>Thanh toán QR</strong> để hoàn tất, hoặc bấm{' '}
+                        <strong>Hủy giữ ghế / Chọn lại</strong> nếu muốn đổi ghế khác.
+                      </>
+                    ) : (
+                      <>
+                        Bạn đang có phiên {otherSessionLabel} tại sự kiện{' '}
+                        <strong>{otherEventTitle}</strong>. Vui lòng hoàn tất hoặc hủy ở thanh
+                        thông báo phía trên để đặt vé sự kiện này.
+                      </>
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* SEATED-BASED: Sơ đồ ghế */}
             {isSeated && (
@@ -1310,6 +1456,8 @@ export default function EventDetailPage({
                 onToggleSeat={(seat) => handleToggleSeat(seat, singleSeatTier)}
                 fallbackTotalSeats={event?.totalSeats}
                 fallbackRowsCount={event?.rowsCount}
+                isLocked={isSelectionLocked}
+                lockMessage={lockMessage}
               />
             )}
 
@@ -1322,6 +1470,8 @@ export default function EventDetailPage({
                 totalZoneCount={totalZoneCount}
                 isUpcoming={isUpcoming}
                 handleUpdateZoneQty={handleUpdateZoneQty}
+                isLocked={isSelectionLocked}
+                lockMessage={lockMessage}
               />
             )}
           </div>
@@ -1344,6 +1494,8 @@ export default function EventDetailPage({
             singleSeatTier={singleSeatTier}
             backendZones={backendZones}
             pendingPayment={pendingPayment}
+            isReserving={isReserving}
+            otherEventSession={otherEventSession}
             handleReserveSeats={handleReserveSeats}
             handlePayment={handlePayment}
             handleCancelReservation={handleCancelReservation}
@@ -1473,15 +1625,6 @@ export default function EventDetailPage({
           </div>
         </div>
       )}
-
-      {/* Modal xem lại vé điện tử E-Ticket khi bấm từ banner */}
-      <ETicketModal
-        isOpen={Boolean(viewingETicketOrder)}
-        onClose={() => setViewingETicketOrder(null)}
-        order={viewingETicketOrder}
-        event={event}
-        user={user}
-      />
     </div>
   );
 }

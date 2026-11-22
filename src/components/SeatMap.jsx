@@ -1,3 +1,4 @@
+import { MAX_TICKETS_PER_ORDER } from '../data/events';
 import { formatVND } from '../utils/format.js';
 import { parseSeatCode } from '../utils/seatLayout.js';
 import './SeatMap.css';
@@ -12,6 +13,8 @@ export default function SeatMap({
   onToggleSeat,
   fallbackTotalSeats,
   fallbackRowsCount,
+  isLocked = false,
+  lockMessage = '',
 }) {
   const rowLetters = Object.keys(groupedSeats).sort();
   const availableCount = seats.filter(
@@ -97,12 +100,13 @@ export default function SeatMap({
                         selectedSeats.some(
                           (s) => (seatId && s.id === seatId) || s.code === seatCode,
                         );
+                      const isDisabled = isOccupied || isLocked;
 
                       return (
                         <button
                           key={seatId || seatCode}
                           onClick={() => onToggleSeat(seat)}
-                          disabled={isOccupied}
+                          disabled={isDisabled}
                           title={
                             isUpcoming
                               ? `Ghế ${seatCode} (Sự kiện chưa mở bán)`
@@ -112,7 +116,9 @@ export default function SeatMap({
                                   ? `Ghế ${seatCode} đang chờ thanh toán`
                                   : isOccupied
                                     ? `Ghế ${seatCode} đã có người mua`
-                                    : `Ghế ${seatCode}\n${tier.name} (${formatVND(seat.price)})`
+                                    : isLocked
+                                      ? lockMessage || 'Đang giữ chỗ — vui lòng bấm Hủy giữ ghế để chọn lại'
+                                      : `Ghế ${seatCode}\n${tier.name} (${formatVND(seat.price)})`
                           }
                           className={`seat-btn${
                             isReserved
@@ -122,7 +128,7 @@ export default function SeatMap({
                                 : isOccupied
                                   ? ' seat-btn-occupied'
                                   : ''
-                          }${isSelected ? ' seat-btn-selected' : ''}`}
+                          }${!isOccupied && isLocked ? ' seat-btn-locked' : ''}${isSelected ? ' seat-btn-selected' : ''}`}
                         >
                           {/* Hiển thị số thứ tự ghế bên trong nút (A1..A12 trên desktop, 1..12 trên mobile) */}
                           <span className="seat-code-full">{seat.displayCode || seatCode}</span>
@@ -150,7 +156,7 @@ export default function SeatMap({
         {rowLetters.length > 0 ? `A-${rowLetters[rowLetters.length - 1]}` : ''}
         ). Còn trống: <strong className="seatmap-summary-emerald">{availableCount} ghế</strong>.
         Đồng giá <strong className="seatmap-summary-pink">{formatVND(tier.price)}</strong> / ghế.
-        Tối đa 5 ghế.
+        Tối đa {MAX_TICKETS_PER_ORDER} ghế.
       </div>
     </div>
   );

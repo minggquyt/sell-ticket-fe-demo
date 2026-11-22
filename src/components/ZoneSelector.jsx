@@ -10,9 +10,13 @@ export default function ZoneSelector({
   totalZoneCount,
   isUpcoming,
   handleUpdateZoneQty,
+  isLocked = false,
+  lockMessage = '',
 }) {
   return (
-    <div className={`zone-root${isUpcoming ? ' zone-root-upcoming' : ''}`}>
+    <div
+      className={`zone-root${isUpcoming ? ' zone-root-upcoming' : ''}${isLocked ? ' zone-root-locked' : ''}`}
+    >
       <h3 className="zone-heading">Danh sách khu vực & Hạng vé</h3>
       <div className="zone-list">
         {Object.keys(backendZones).map((zoneName) => {
@@ -44,11 +48,12 @@ export default function ZoneSelector({
                   <div className="zone-per">/ 1 vé</div>
                 </div>
 
-                <div className="zone-stepper">
+                <div className="zone-stepper" title={isLocked ? lockMessage : undefined}>
                   <button
                     onClick={() => handleUpdateZoneQty(zoneName, -1)}
-                    disabled={qty <= 0}
-                    className={`zone-step-btn${qty > 0 ? ' active' : ''}`}
+                    disabled={isLocked || qty <= 0}
+                    title={isLocked ? lockMessage : undefined}
+                    className={`zone-step-btn${!isLocked && qty > 0 ? ' active' : ''}`}
                   >
                     <Minus size={15} />
                   </button>
@@ -58,9 +63,13 @@ export default function ZoneSelector({
                   <button
                     onClick={() => handleUpdateZoneQty(zoneName, 1)}
                     disabled={
-                      totalZoneCount >= MAX_TICKETS_PER_ORDER || qty >= remainingCount || isSoldOut
+                      isLocked ||
+                      totalZoneCount >= MAX_TICKETS_PER_ORDER ||
+                      qty >= remainingCount ||
+                      isSoldOut
                     }
-                    className={`zone-step-btn${totalZoneCount < 5 && qty < remainingCount && !isSoldOut ? ' active-accent' : ''}`}
+                    title={isLocked ? lockMessage : undefined}
+                    className={`zone-step-btn${!isLocked && totalZoneCount < MAX_TICKETS_PER_ORDER && qty < remainingCount && !isSoldOut ? ' active-accent' : ''}`}
                   >
                     <Plus size={15} />
                   </button>
@@ -71,8 +80,8 @@ export default function ZoneSelector({
         })}
       </div>
       <div className="zone-footer">
-        Tổng số vé đang chọn: <strong className="zone-footer-num">{totalZoneCount}</strong> / 5 vé
-        tối đa
+        Tổng số vé đang chọn: <strong className="zone-footer-num">{totalZoneCount}</strong> /{' '}
+        {MAX_TICKETS_PER_ORDER} vé tối đa
       </div>
     </div>
   );

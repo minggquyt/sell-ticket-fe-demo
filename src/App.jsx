@@ -93,6 +93,7 @@ function EventDetailRoute({
 
   return (
     <EventDetailPage
+      key={currentEvent.id}
       event={currentEvent}
       user={user}
       userOrders={userOrders}

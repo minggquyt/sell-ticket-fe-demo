@@ -102,3 +102,13 @@ trước khi bấm "Tiếp tục thanh toán".
 - **Cửa sổ thời gian `120s + 30s`:** 120s quét QR (`WAITING`), sau đó chuyển sang pha `CONFIRMING` 30s (làm mờ QR, khóa nút Hủy để chờ webhook giao dịch giờ chót); thanh toán muộn quá 120s chuyển thẳng `REFUND_PENDING` với CTA cập nhật TK hoàn tiền.
 - **Mobile VietQR Deeplinks:** `src/components/MobileBankDeeplinks.jsx` + `src/utils/vietqrDeeplink.js` chỉ hiển thị trên iOS/Android, tách nhóm app hỗ trợ `autofill` ở trên và nhóm ngân hàng khác kèm hướng dẫn quét QR từ thư viện ảnh.
 - **Chi tiết đầy đủ cho team FE:** xem [docs/IN_SITE_PAYOS_QR_CHECKOUT.md](./docs/IN_SITE_PAYOS_QR_CHECKOUT.md).
+
+## 23/11/2026 — Khóa chọn ghế / khu vực khi đang giữ chỗ & đồng bộ giới hạn 4 vé
+
+Khóa tương tác chọn ghế (Seated-based) và stepper `+/-` (Zone-based) trên cả UI lẫn handler trong suốt thời gian giữ chỗ, chờ thanh toán, đang gửi request hoặc đang giữ phiên ở sự kiện khác, đồng thời đồng bộ giới hạn tối đa `4` vé khớp Backend.
+
+- **Khóa 2 lớp (`isSelectionLocked`):** dẫn xuất trong `EventDetailPage.jsx` từ `isReserved || isReserving || isProcessingPayment || Boolean(otherEventSession)`, truyền `isLocked` & `lockMessage` xuống `SeatSelector`/`SeatMap` và `ZoneSelector`, kèm banner hướng dẫn `.detail-lock-notice`.
+- **Chống race condition & lệch ghế:** khóa nút và sơ đồ khi `isReserving` đang chạy, đồng bộ `selectedSeats` theo `heldSeatsData` server trả về, ưu tiên `reservedSeatIds` trong `handlePayment()`.
+- **Khóa xuyên sự kiện & an toàn chuyển trang:** đồng bộ `otherEventSession` qua `getActiveSessions` + `RESERVATION_CHANGED_EVENT` / `storage` (tự mở khóa ngay khi hủy ở `PendingPaymentBanner`), gắn `key={currentEvent.id}` tại `App.jsx` để tránh rò state giữa 2 sự kiện.
+- **Đồng bộ `MAX_TICKETS_PER_ORDER = 4` & dọn mã nguồn:** bỏ toàn bộ nhãn/điều kiện số `5` rải rác ở `EventDetailPage`, `SeatMap`, `ZoneSelector`, `BookingSummary`, `EventsPage`, `EventFormModal`; xóa `console.log` debug, bỏ `.clineignore` khỏi `.gitignore` và dọn sạch lỗi/warning ESLint ở `EventDetailPage.jsx`.
+- **Chi tiết đầy đủ cho team FE:** xem [docs/LOCK_SEAT_SELECTION_DURING_HOLD.md](./docs/LOCK_SEAT_SELECTION_DURING_HOLD.md).

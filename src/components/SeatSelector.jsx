@@ -11,6 +11,8 @@ export default function SeatSelector({
   onToggleSeat,
   fallbackTotalSeats,
   fallbackRowsCount,
+  isLocked = false,
+  lockMessage = '',
 }) {
   return (
     <SeatMap
@@ -23,6 +25,8 @@ export default function SeatSelector({
       onToggleSeat={onToggleSeat}
       fallbackTotalSeats={fallbackTotalSeats}
       fallbackRowsCount={fallbackRowsCount}
+      isLocked={isLocked}
+      lockMessage={lockMessage}
     />
   );
 }
