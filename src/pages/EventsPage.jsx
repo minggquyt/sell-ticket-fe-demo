@@ -13,7 +13,14 @@ import {
   ChevronUp,
   X,
 } from 'lucide-react';
-import { CATEGORIES, CITIES, isSeatedEvent, getEventVenue, getMinPrice } from '../data/events';
+import {
+  CATEGORIES,
+  CITIES,
+  MAX_TICKETS_PER_ORDER,
+  isSeatedEvent,
+  getEventVenue,
+  getMinPrice,
+} from '../data/events';
 import { formatVND } from '../utils/format.js';
 import EventCard from '../components/EventCard.jsx';
 import './EventsPage.css';
@@ -232,12 +239,12 @@ export default function EventsPage({ events, onSelectEvent, isLoading = false })
                   { id: 'all', label: 'Tất cả hình thức', icon: null },
                   {
                     id: 'seated',
-                    label: 'Ghế ngồi (Seated-based, max 5 ghế)',
+                    label: `Ghế ngồi (Seated-based, max ${MAX_TICKETS_PER_ORDER} ghế)`,
                     icon: <Armchair size={14} />,
                   },
                   {
                     id: 'zone',
-                    label: 'Khu vực (Zone-based, max 5 vé)',
+                    label: `Khu vực (Zone-based, max ${MAX_TICKETS_PER_ORDER} vé)`,
                     icon: <Layers size={14} />,
                   },
                 ].map((item) => (

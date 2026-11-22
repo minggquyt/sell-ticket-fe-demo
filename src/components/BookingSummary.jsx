@@ -1,4 +1,5 @@
 import { AlertTriangle, CreditCard, Timer, X } from 'lucide-react';
+import { MAX_TICKETS_PER_ORDER } from '../data/events';
 import { formatVND } from '../utils/format.js';
 import './BookingSummary.css';
 
@@ -21,6 +22,8 @@ export default function BookingSummary({
   singleSeatTier,
   backendZones = {},
   pendingPayment = null,
+  isReserving = false,
+  otherEventSession = null,
   handleReserveSeats,
   handleCancelReservation,
   handlePrePaymentClick,
@@ -36,7 +39,9 @@ export default function BookingSummary({
       {isSeated ? (
         <div className="booking-section">
           <div className="booking-section-head">
-            <span>Ghế đã chọn ({selectedSeats.length}/5):</span>
+            <span>
+              Ghế đã chọn ({selectedSeats.length}/{MAX_TICKETS_PER_ORDER}):
+            </span>
             <span className="booking-tier-badge">{singleSeatTier.name}</span>
           </div>
           {selectedSeats.length === 0 ? (
@@ -59,7 +64,9 @@ export default function BookingSummary({
         </div>
       ) : (
         <div className="booking-section">
-          <div className="booking-zone-label">Vé khu vực ({totalZoneCount}/5):</div>
+          <div className="booking-zone-label">
+            Vé khu vực ({totalZoneCount}/{MAX_TICKETS_PER_ORDER}):
+          </div>
           {zoneEntries.length === 0 ? (
             <div className="booking-empty">Nhấn dấu (+) để thêm vé theo khu vực.</div>
           ) : (
@@ -102,13 +109,24 @@ export default function BookingSummary({
         {/* Nút chính (Giữ chỗ hoặc Thanh toán) */}
         <button
           onClick={isReserved ? handlePrePaymentClick : handleReserveSeats}
-          disabled={(!hasSelections && !pendingPayment) || isProcessingPayment || isUpcoming}
+          disabled={
+            (!hasSelections && !pendingPayment) ||
+            isReserving ||
+            isProcessingPayment ||
+            isUpcoming ||
+            Boolean(otherEventSession && !isReserved)
+          }
           className="glow-btn-pink booking-main-btn"
         >
           {isProcessingPayment ? (
             <div className="booking-btn-row">
               <span className="booking-btn-spinner" />
               <span>Đang tạo mã QR thanh toán...</span>
+            </div>
+          ) : isReserving ? (
+            <div className="booking-btn-row">
+              <span className="booking-btn-spinner" />
+              <span>Đang giữ chỗ...</span>
             </div>
           ) : isUpcoming ? (
             <div className="booking-btn-row">
@@ -133,6 +151,11 @@ export default function BookingSummary({
                   : `Giữ ghế thành công! Hết hạn sau: ${formatCountdown(countdownSeconds)}`}
               </span>
             </div>
+          ) : otherEventSession ? (
+            <div className="booking-btn-row booking-btn-row-wrap">
+              <AlertTriangle size={18} className="booking-icon-fixed" />
+              <span>Đang có phiên giữ chỗ khác</span>
+            </div>
           ) : (
             // TRẠNG THÁI 1: CHƯA GIỮ GHẾ -> HIỂN THỊ NÚT GIỮ GHẾ
             <div className="booking-btn-row booking-btn-row-wrap">
@@ -146,7 +169,7 @@ export default function BookingSummary({
         {isReserved && (
           <button
             onClick={() => handleCancelReservation(false)}
-            disabled={isProcessingPayment}
+            disabled={isProcessingPayment || isReserving}
             className="booking-cancel-btn"
           >
             <X size={14} />{' '}

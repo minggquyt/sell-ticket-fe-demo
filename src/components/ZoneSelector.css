@@ -58,6 +58,9 @@
   opacity: 0.4;
   pointer-events: none;
 }
+.zone-root-locked .zone-stepper {
+  opacity: 0.55;
+}
 .zone-heading {
   font-size: 18px;
   font-weight: 700;

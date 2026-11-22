@@ -1,5 +1,5 @@
 import { Plus, Trash2, Armchair, Layers, Check, X } from 'lucide-react';
-import { CATEGORIES } from '../data/events';
+import { CATEGORIES, MAX_TICKETS_PER_ORDER } from '../data/events';
 import { formatVND } from '../utils/format.js';
 import { getRowLetter } from '../utils/seatLayout.js';
 import './EventFormModal.css';
@@ -57,7 +57,9 @@ export default function EventFormModal({
                 className="efm-input"
               >
                 <option value="SEAT_BASED">Seated-based</option>
-                <option value="ZONE_BASED">Zone-based (Khu vực đứng/vé mở, max 5 vé)</option>
+                <option value="ZONE_BASED">
+                  Zone-based (Khu vực đứng/vé mở, max {MAX_TICKETS_PER_ORDER} vé)
+                </option>
               </select>
             </div>
           </div>
