@@ -28,7 +28,10 @@ async function apiRequest(path, { method = 'GET', body, token, fallbackError } =
   const payload = await res.json().catch(() => null);
 
   if (!res.ok || payload?.success === false) {
-    throw new Error(payload?.message || fallbackError || `Lỗi máy chủ (HTTP ${res.status}).`);
+    const err = new Error(payload?.message || fallbackError || `Lỗi máy chủ (HTTP ${res.status}).`);
+    err.status = res.status;
+    err.payload = payload;
+    throw err;
   }
 
   return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
@@ -444,6 +447,154 @@ export async function fetchOrderStatus(orderCode, token) {
     token,
     fallbackError: 'Không thể xác thực trạng thái đơn hàng.',
   });
+}
+
+/**
+ * Lấy dữ liệu thanh toán QR của đơn hàng (Route: GET /api/orders/:orderCode/payment)
+ * Mặc định chỉ đọc DB; truyền sync=true ở các mốc tự động để đối soát PayOS (BE throttle 10s).
+ */
+export async function fetchOrderPayment(orderCode, token, { sync = false } = {}) {
+  const query = sync ? '?sync=1' : '';
+  return apiRequest(`/orders/${encodeURIComponent(orderCode)}/payment${query}`, {
+    token,
+    fallbackError: 'Không thể tải thông tin thanh toán đơn hàng.',
+  });
+}
+
+/**
+ * Kết nối SSE nhận trạng thái đơn hàng tức thời qua fetch + ReadableStream + Authorization Bearer.
+ */
+export async function subscribeOrderEvents(
+  orderCode,
+  token,
+  { onInit, onStatusChanged, onOpen, onError, onAuthError, onNotFound, signal } = {},
+) {
+  if (!orderCode || !token) return;
+
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(orderCode)}/events`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'text/event-stream',
+      },
+      cache: 'no-store',
+      signal,
+    });
+  } catch (err) {
+    if (signal?.aborted || err?.name === 'AbortError') return;
+    onError?.(err);
+    return;
+  }
+
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    const err = new Error(payload?.message || `Lỗi kết nối SSE (HTTP ${res.status}).`);
+    err.status = res.status;
+    err.payload = payload;
+
+    if (res.status === 401 || res.status === 403) {
+      onAuthError?.(err);
+      return;
+    }
+    if (res.status === 404) {
+      onNotFound?.(err);
+      return;
+    }
+    onError?.(err);
+    return;
+  }
+
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    onError?.(new Error('Trình duyệt không hỗ trợ đọc stream sự kiện.'));
+    return;
+  }
+
+  onOpen?.();
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let receivedTerminal = false;
+
+  const dispatchBlock = (rawBlock) => {
+    const lines = rawBlock.split('\n');
+    let eventName = 'message';
+    const dataLines = [];
+
+    for (const rawLine of lines) {
+      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+      if (!line || line.startsWith(':')) continue;
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).replace(/^ /, ''));
+      }
+    }
+
+    if (dataLines.length === 0) return;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(dataLines.join('\n'));
+    } catch {
+      return;
+    }
+
+    if (parsed?.status && parsed.status !== 'PAYMENT_PROCESSING') {
+      receivedTerminal = true;
+    }
+
+    if (eventName === 'init') {
+      onInit?.(parsed);
+    } else if (eventName === 'order_status') {
+      onStatusChanged?.(parsed);
+    }
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      // Giữ nguyên \r cuối chunk nếu bị cắt giữa \r\n
+      const trailingCr = buffer.endsWith('\r');
+      const processable = trailingCr ? buffer.slice(0, -1) : buffer;
+      const normalized = processable.replace(/\r\n/g, '\n');
+
+      let boundaryIdx;
+      let cursor = 0;
+      while ((boundaryIdx = normalized.indexOf('\n\n', cursor)) !== -1) {
+        const block = normalized.slice(cursor, boundaryIdx);
+        cursor = boundaryIdx + 2;
+        if (block.trim()) dispatchBlock(block);
+      }
+
+      buffer = normalized.slice(cursor) + (trailingCr ? '\r' : '');
+    }
+
+    const tail = (buffer + decoder.decode()).replace(/\r\n/g, '\n');
+    if (tail.trim()) {
+      for (const block of tail.split('\n\n')) {
+        if (block.trim()) dispatchBlock(block);
+      }
+    }
+
+    if (!signal?.aborted && !receivedTerminal) {
+      onError?.(new Error('Kết nối SSE bị ngắt trước khi hoàn tất đơn hàng.'));
+    }
+  } catch (err) {
+    if (signal?.aborted || err?.name === 'AbortError') return;
+    onError?.(err);
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Bỏ qua lỗi đóng reader
+    }
+  }
 }
 
 let activeSessionInFlight = null;

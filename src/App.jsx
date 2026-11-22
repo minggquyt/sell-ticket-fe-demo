@@ -8,6 +8,7 @@ import OrderHistoryPage from './pages/OrderHistoryPage';
 import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 import NotificationsPage from './pages/NotificationsPage';
+import CheckoutPage from './pages/CheckoutPage';
 import { buildNotifications } from './utils/format.js';
 import {
   fetchEvents,
@@ -128,6 +129,7 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const urlEventId = location.pathname.match(/^\/events\/([^/]+)/)?.[1] || null;
+  const urlCheckoutOrderCode = location.pathname.match(/^\/checkout\/([^/]+)/)?.[1] || null;
   const currentRoute =
     location.pathname === '/login'
       ? 'login'
@@ -139,9 +141,11 @@ function AppShell() {
             ? 'profile'
             : location.pathname === '/notifications'
               ? 'notifications'
-              : urlEventId
-            ? 'detail'
-            : 'events';
+              : urlCheckoutOrderCode
+                ? 'checkout'
+                : urlEventId
+                  ? 'detail'
+                  : 'events';
 
   // Nhớ sự kiện đang xem dở để đăng nhập xong quay lại đúng trang chi tiết
   const [lastViewedEventId, setLastViewedEventId] = useState(null);
@@ -216,10 +220,9 @@ function AppShell() {
   }, []);
 
   // Tự động kiểm tra và đồng bộ lại định kỳ mỗi 10 giây (ngầm, không nháy màn hình).
-  // Không tải dữ liệu sự kiện trên trang đăng nhập/đăng ký để tránh gọi /api/events
-  // trong khi người dùng đang ở luồng xác thực.
+  // Không tải dữ liệu sự kiện trên trang đăng nhập/đăng ký hoặc trang thanh toán QR.
   useEffect(() => {
-    if (currentRoute === 'login') {
+    if (currentRoute === 'login' || currentRoute === 'checkout') {
       return;
     }
 
@@ -235,7 +238,7 @@ function AppShell() {
   }, [currentRoute, loadEvents, loadUserOrders, user?.token]);
 
   // Điều hướng chuyển trang
-  const navigateTo = (route, eventId = null) => {
+  const navigateTo = (route, param = null) => {
     if (isAdminLoggedIn) {
       navigate('/admin');
       return;
@@ -250,8 +253,10 @@ function AppShell() {
       navigate('/profile#bank');
     } else if (route === 'notifications') {
       navigate('/notifications');
-    } else if (route === 'detail' && eventId) {
-      navigate(`/events/${eventId}`);
+    } else if (route === 'checkout' && param) {
+      navigate(`/checkout/${param}`);
+    } else if (route === 'detail' && param) {
+      navigate(`/events/${param}`);
     } else {
       navigate('/events');
     }
@@ -264,8 +269,17 @@ function AppShell() {
     if (userData?.token) {
       loadUserOrders(userData.token, true);
     }
+    let afterLoginPath = null;
+    try {
+      afterLoginPath = sessionStorage.getItem('sellticket_after_login_path');
+      if (afterLoginPath) sessionStorage.removeItem('sellticket_after_login_path');
+    } catch {
+      /* Bỏ qua */
+    }
     if (isAdminUser(userData)) {
       navigate('/admin');
+    } else if (afterLoginPath && afterLoginPath.startsWith('/')) {
+      navigate(afterLoginPath);
     } else if (sessionStorage.getItem('sellticket_after_login') === 'my-tickets') {
       try {
         sessionStorage.removeItem('sellticket_after_login');
@@ -456,7 +470,7 @@ function AppShell() {
       />
 
       {/* Thanh khôi phục phiên giữ ghế / thanh toán còn hạn xuyên thiết bị */}
-      {currentRoute !== 'login' && (
+      {currentRoute !== 'login' && currentRoute !== 'checkout' && (
         <PendingPaymentBanner
           user={user}
           orders={cart}
@@ -494,6 +508,18 @@ function AppShell() {
             }
           />
           <Route
+            path="/checkout/:orderCode"
+            element={
+              <CheckoutPage
+                user={user}
+                events={eventsList}
+                onNavigate={navigateTo}
+                onRequireLogin={() => navigateTo('login')}
+                onOrderUpdated={() => loadUserOrders(null, true)}
+              />
+            }
+          />
+          <Route
             path="/my-tickets"
             element={
               <OrderHistoryPage
@@ -503,6 +529,7 @@ function AppShell() {
                 isLoading={isLoadingOrders}
                 onRefresh={() => loadUserOrders(null, false)}
                 onSelectEvent={(eventId) => navigateTo('detail', eventId)}
+                onContinueCheckout={(orderCode) => navigateTo('checkout', orderCode)}
                 onBack={() => navigateTo('events')}
                 onRequireLogin={() => navigateTo('login')}
                 onGoToBankProfile={() => navigateTo('profile')}

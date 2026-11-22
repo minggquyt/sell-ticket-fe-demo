@@ -108,7 +108,7 @@ export default function BookingSummary({
           {isProcessingPayment ? (
             <div className="booking-btn-row">
               <span className="booking-btn-spinner" />
-              <span>Đang kết nối PayOS...</span>
+              <span>Đang tạo mã QR thanh toán...</span>
             </div>
           ) : isUpcoming ? (
             <div className="booking-btn-row">
@@ -123,7 +123,7 @@ export default function BookingSummary({
                 <span>
                   {pendingPayment
                     ? `Tiếp tục thanh toán đơn #${pendingPayment.orderCode} • ${formatVND(displayTotal)}`
-                    : `Thanh toán qua PayOS • ${formatVND(displayTotal)}`}
+                    : `Thanh toán QR • ${formatVND(displayTotal)}`}
                 </span>
               </div>
               <span className="booking-countdown">
