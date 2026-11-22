@@ -11,12 +11,9 @@ import {
   ArrowLeft,
   QrCode,
   ExternalLink,
-  ShieldCheck,
   Armchair,
   Layers,
   RotateCcw,
-  Search,
-  KeyRound,
 } from 'lucide-react';
 import { formatVND } from '../utils/format.js';
 import ETicketModal from '../components/ETicketModal.jsx';
@@ -29,6 +26,7 @@ export default function OrderHistoryPage({
   isLoading = false,
   onRefresh,
   onSelectEvent,
+  onContinueCheckout,
   onBack,
   onRequireLogin,
   onGoToBankProfile
@@ -36,6 +34,17 @@ export default function OrderHistoryPage({
   // 'paid' | 'refund' | 'all' | 'cancelled'
   const [filterTab, setFilterTab] = useState('paid');
   const [selectedETicketOrder, setSelectedETicketOrder] = useState(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const hasProcessingOrder = Array.isArray(orders)
+    ? orders.some((o) => (o?.status || o?.orderStatus) === 'PAYMENT_PROCESSING')
+    : false;
+
+  useEffect(() => {
+    if (!hasProcessingOrder) return undefined;
+    const timer = setInterval(() => setNowMs(Date.now()), 10000);
+    return () => clearInterval(timer);
+  }, [hasProcessingOrder]);
 
   if (!user) {
     return (
@@ -261,6 +270,15 @@ export default function OrderHistoryPage({
               .join(', ');
 
             const currentStatus = getStatus(order);
+            const confirmDeadlineMs = order.confirmUntil
+              ? new Date(order.confirmUntil).getTime()
+              : order.expiresAt
+                ? new Date(order.expiresAt).getTime() + 30 * 1000
+                : 0;
+            const canContinueCheckout =
+              currentStatus === 'PAYMENT_PROCESSING' &&
+              Boolean(onContinueCheckout) &&
+              confirmDeadlineMs > nowMs;
             const createdDate = order.createdAt
               ? new Date(order.createdAt).toLocaleString('vi-VN')
               : '';
@@ -370,6 +388,16 @@ export default function OrderHistoryPage({
                       </div>
 
                       <div className="oh-card-actions">
+                        {canContinueCheckout && (
+                          <button
+                            onClick={() => onContinueCheckout(order.orderCode)}
+                            className="glow-btn-primary oh-btn-eticket"
+                          >
+                            <QrCode size={15} />
+                            <span>Tiếp tục thanh toán</span>
+                          </button>
+                        )}
+
                         {currentStatus === 'SUCCESS' && (
                           <button
                             onClick={() => setSelectedETicketOrder(order)}

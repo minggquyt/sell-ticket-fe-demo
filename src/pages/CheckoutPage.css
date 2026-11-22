@@ -1,0 +1,880 @@
+.co-page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 20px clamp(12px, 3.5vw, 24px) 64px;
+}
+
+/* Thanh điều hướng phía trên thẻ */
+.co-nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  min-height: 32px;
+}
+
+.co-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.co-back-link:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.co-reconnect-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Thẻ thanh toán tối giản bố cục PayOS trên nền Dark Cyber TicketVerse */
+.co-payos-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--text-main);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-subtle);
+  border: 1px solid var(--border-color);
+}
+
+.co-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.co-header-left {
+  min-width: 0;
+  flex: 1;
+}
+
+.co-order-heading {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+.co-order-subline {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.co-timer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: var(--radius-full);
+  font-size: 13.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.co-timer-pill.is-normal {
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(129, 140, 248, 0.38);
+  color: #c7d2fe;
+}
+
+.co-timer-pill.is-warning {
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  color: #fde68a;
+}
+
+.co-timer-pill.is-danger {
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  animation: coDangerPulse 1s ease-in-out infinite;
+}
+
+@keyframes coDangerPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+/* Thanh hướng dẫn (phiên bản dark đồng bộ) */
+.co-tip-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(99, 102, 241, 0.12);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.22);
+  color: #c7d2fe;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.co-tip-icon {
+  flex-shrink: 0;
+  color: var(--primary-light);
+}
+
+/* Layout 2 cột PayOS */
+.co-card-body {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+/* Cột trái: QR */
+.co-qr-panel {
+  background: rgba(16, 22, 35, 0.65);
+  border-right: 1px solid var(--border-color);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.co-qr-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.co-brand-vietqr {
+  color: #38bdf8;
+  letter-spacing: -0.2px;
+}
+
+.co-brand-sep {
+  color: var(--text-dim);
+}
+
+.co-brand-napas {
+  color: var(--primary-light);
+}
+
+.co-qr-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Giữ khung trong chứa mã QR nền trắng tinh để camera điện thoại quét nhạy 100% */
+.co-qr-frame {
+  position: relative;
+  background: #ffffff;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.25s ease, opacity 0.25s ease;
+}
+
+.co-qr-frame.is-blurred {
+  filter: blur(4px);
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.co-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--primary-light);
+  border-style: solid;
+  pointer-events: none;
+}
+
+.co-corner-tl {
+  top: -1px;
+  left: -1px;
+  border-width: 3px 0 0 3px;
+  border-top-left-radius: 12px;
+}
+
+.co-corner-tr {
+  top: -1px;
+  right: -1px;
+  border-width: 3px 3px 0 0;
+  border-top-right-radius: 12px;
+}
+
+.co-corner-bl {
+  bottom: -1px;
+  left: -1px;
+  border-width: 0 0 3px 3px;
+  border-bottom-left-radius: 12px;
+}
+
+.co-corner-br {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 3px 3px 0;
+  border-bottom-right-radius: 12px;
+}
+
+.co-qr-missing {
+  width: 216px;
+  height: 216px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  font-size: 13px;
+}
+
+.co-confirm-overlay {
+  position: absolute;
+  inset: 8px;
+  border-radius: 10px;
+  background: rgba(10, 13, 20, 0.9);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  backdrop-filter: blur(6px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.co-spin {
+  animation: spin 1s linear infinite;
+}
+
+.co-confirm-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #fde68a;
+}
+
+.co-confirm-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.co-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.co-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--accent-amber), var(--accent-cyan));
+  transition: width 0.8s linear;
+}
+
+.co-download-qr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-main);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.co-download-qr-btn:hover {
+  background: rgba(99, 102, 241, 0.22);
+  border-color: var(--border-glow);
+}
+
+.co-passive-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.co-green-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-emerald);
+  box-shadow: 0 0 8px var(--accent-emerald);
+  animation: coDotPulse 1.8s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes coDotPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.co-mobile-deeplinks-slot {
+  display: none;
+}
+
+/* Cột phải: Thông tin chuyển khoản phẳng trên nền tối */
+.co-info-panel {
+  padding: 24px 26px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.co-bank-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.co-bank-logo {
+  height: 28px;
+  max-width: 68px;
+  object-fit: contain;
+  background: #ffffff;
+  padding: 3px 6px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.co-bank-logo-fallback {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--primary-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.co-bank-meta {
+  min-width: 0;
+}
+
+.co-bank-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+.co-kv-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.co-kv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.co-kv-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.co-field-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.co-field-val {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.co-field-val.is-mono {
+  font-family: monospace;
+  letter-spacing: 0.25px;
+}
+
+.co-field-val.is-amount {
+  font-size: 17px;
+  color: var(--accent-emerald);
+}
+
+.co-field-val.is-desc {
+  color: #67e8f9;
+}
+
+.co-copy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  color: #c7d2fe;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.co-copy-pill:hover {
+  background: rgba(99, 102, 241, 0.28);
+  color: #ffffff;
+}
+
+.co-copy-pill.is-copied {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+}
+
+.co-inline-note {
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.co-inline-note strong {
+  color: var(--text-main);
+}
+
+.co-card-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.co-event-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.co-event-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.co-cancel-btn {
+  padding: 8px 20px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.co-cancel-btn:hover:not(:disabled) {
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.co-cancel-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Trạng thái kết thúc / lỗi trên nền thẻ Dark Glass */
+.co-payos-state-card {
+  max-width: 520px;
+  margin: 24px auto;
+  padding: 32px 28px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.co-state-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.co-state-icon.is-emerald {
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.co-state-icon.is-amber {
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.co-state-icon.is-red {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  color: #f87171;
+}
+
+.co-pop-in {
+  animation: coPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes coPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.co-verified-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #6ee7b7;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.co-state-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.co-state-desc {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.co-state-summary {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  text-align: left;
+}
+
+.co-state-summary-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.co-state-summary-row strong {
+  color: var(--text-main);
+  text-align: right;
+  word-break: break-word;
+}
+
+.co-state-summary-row.is-total {
+  padding-top: 9px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.co-val-emerald {
+  color: var(--accent-emerald) !important;
+  font-size: 15px;
+}
+
+.co-refund-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  padding: 13px 15px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.36);
+  color: #fde68a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.co-refund-banner-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent-amber);
+}
+
+.co-state-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.co-btn-indigo,
+.co-btn-outline,
+.co-btn-amber,
+.co-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.co-btn-indigo {
+  background: linear-gradient(135deg, var(--primary) 0%, #4338ca 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 15px var(--primary-glow);
+}
+
+.co-btn-indigo:hover {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%);
+}
+
+.co-btn-outline {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-main);
+}
+
+.co-btn-outline:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.co-btn-amber {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  color: #0a0d14;
+}
+
+.co-btn-amber:hover {
+  filter: brightness(1.06);
+}
+
+.co-btn-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  color: #ffffff;
+}
+
+.co-btn-danger:disabled,
+.co-btn-outline:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Modal xác nhận hủy đơn */
+.co-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(5, 8, 15, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.co-modal-card {
+  max-width: 400px;
+  width: 100%;
+  background: var(--bg-secondary);
+  color: var(--text-main);
+  padding: 24px;
+  border-radius: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  box-shadow: var(--shadow-subtle);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.co-modal-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.co-modal-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.co-modal-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.co-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+/* Skeleton loading */
+.co-skel {
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: coShimmer 1.4s infinite;
+}
+
+@keyframes coShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.co-skel-title {
+  width: 220px;
+  height: 24px;
+}
+
+.co-skel-pill {
+  width: 96px;
+  height: 32px;
+  border-radius: var(--radius-full);
+}
+
+.co-skel-tip {
+  width: 70%;
+  height: 18px;
+  margin: 0 auto;
+}
+
+.co-skel-qr {
+  width: 240px;
+  height: 240px;
+}
+
+.co-skel-line {
+  width: 100%;
+  height: 46px;
+  margin-bottom: 12px;
+}
+
+/* Responsive Mobile (1 cột gọn gàng) */
+@media (max-width: 768px) {
+  .co-card-header {
+    padding: 16px;
+  }
+
+  .co-order-heading {
+    font-size: 15.5px;
+  }
+
+  .co-card-body {
+    grid-template-columns: 1fr;
+  }
+
+  .co-qr-panel {
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding: 20px 16px;
+  }
+
+  .co-mobile-deeplinks-slot {
+    display: block;
+  }
+
+  .co-info-panel {
+    padding: 18px 16px;
+  }
+}

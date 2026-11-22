@@ -1,5 +1,6 @@
 export const RESERVATION_STORAGE_PREFIX = 'event_reservation_';
 export const RESERVATION_CHANGED_EVENT = 'sellticket:reservation-changed';
+const DEFAULT_CONFIRM_WINDOW_MS = 30 * 1000;
 
 export const getReservationStorageKey = (eventId) => `${RESERVATION_STORAGE_PREFIX}${eventId}`;
 
@@ -8,6 +9,20 @@ const emitReservationChanged = () => {
     window.dispatchEvent(new Event(RESERVATION_CHANGED_EVENT));
   }
 };
+
+export function getSessionEffectiveExpiryMs(session) {
+  if (!session) return NaN;
+  if (session.step === 'PAYMENT_PROCESSING') {
+    if (session.confirmUntil) {
+      const confirmMs = new Date(session.confirmUntil).getTime();
+      if (Number.isFinite(confirmMs)) return confirmMs;
+    }
+    const baseRaw = session.expiresAt || session.reservedUntil;
+    const baseMs = baseRaw ? new Date(baseRaw).getTime() : NaN;
+    return Number.isFinite(baseMs) ? baseMs + DEFAULT_CONFIRM_WINDOW_MS : NaN;
+  }
+  return session.reservedUntil ? new Date(session.reservedUntil).getTime() : NaN;
+}
 
 export function readReservation(eventId) {
   if (!eventId) return null;
@@ -60,6 +75,9 @@ const isSessionSame = (a, b) =>
   Number(a.orderCode || 0) === Number(b.orderCode || 0) &&
   String(a.checkoutUrl || '') === String(b.checkoutUrl || '') &&
   String(a.reservedUntil || '') === String(b.reservedUntil || '') &&
+  String(a.expiresAt || '') === String(b.expiresAt || '') &&
+  String(a.confirmUntil || '') === String(b.confirmUntil || '') &&
+  String(a.phase || '') === String(b.phase || '') &&
   Number(a.totalAmount ?? -1) === Number(b.totalAmount ?? -1) &&
   (Array.isArray(a.seats) ? a.seats.length : 0) === (Array.isArray(b.seats) ? b.seats.length : 0);
 
@@ -81,14 +99,14 @@ export function getActiveSessions(userId) {
       const parsed = JSON.parse(localStorage.getItem(key) || 'null');
       if (!parsed || (parsed.step !== 'PAYMENT_PROCESSING' && parsed.step !== 'RESERVED')) continue;
       if (!parsed.userId || String(parsed.userId) !== String(userId)) continue;
-      if (!parsed.reservedUntil) continue;
+      if (!parsed.reservedUntil && !parsed.confirmUntil && !parsed.expiresAt) continue;
 
       if (parsed.step === 'PAYMENT_PROCESSING' && !parsed.orderCode) continue;
       if (parsed.step === 'RESERVED' && (!Array.isArray(parsed.seats) || parsed.seats.length === 0)) {
         continue;
       }
 
-      const expiryMs = new Date(parsed.reservedUntil).getTime();
+      const expiryMs = getSessionEffectiveExpiryMs(parsed);
       if (!Number.isFinite(expiryMs) || expiryMs <= nowMs) continue;
 
       list.push({
@@ -103,17 +121,17 @@ export function getActiveSessions(userId) {
 
   list.sort((a, b) => {
     if (a.step !== b.step) return a.step === 'PAYMENT_PROCESSING' ? -1 : 1;
-    return new Date(b.reservedUntil).getTime() - new Date(a.reservedUntil).getTime();
+    return getSessionEffectiveExpiryMs(b) - getSessionEffectiveExpiryMs(a);
   });
   return list;
 }
 
 /**
- * Quét các phiên thanh toán PayOS đang chờ (`step === 'PAYMENT_PROCESSING'`) còn hạn kèm `checkoutUrl`.
+ * Quét các phiên thanh toán PayOS đang chờ (`step === 'PAYMENT_PROCESSING'`) còn hạn (theo orderCode).
  */
 export function getActivePendingPayments(userId) {
   return getActiveSessions(userId).filter(
-    (s) => s.step === 'PAYMENT_PROCESSING' && Boolean(s.checkoutUrl),
+    (s) => s.step === 'PAYMENT_PROCESSING' && Boolean(s.orderCode),
   );
 }
 
@@ -157,7 +175,10 @@ export function syncServerReservationToStorage(userId, serverSession, { silent =
     checkoutUrl: serverSession.checkoutUrl || existing?.checkoutUrl || null,
     totalAmount:
       serverSession.totalAmount != null ? Number(serverSession.totalAmount) : existing?.totalAmount ?? null,
-    reservedUntil: serverSession.reservedUntil,
+    reservedUntil: serverSession.expiresAt || serverSession.reservedUntil,
+    expiresAt: serverSession.expiresAt || existing?.expiresAt || serverSession.reservedUntil || null,
+    confirmUntil: serverSession.confirmUntil || existing?.confirmUntil || null,
+    phase: serverSession.phase || existing?.phase || null,
     seats:
       Array.isArray(serverSession.seats) && serverSession.seats.length > 0
         ? serverSession.seats
