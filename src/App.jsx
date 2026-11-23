@@ -39,6 +39,11 @@ import {
   saveAfterLoginPath,
   writeStoredUser,
 } from './utils/authSession.js';
+import {
+  clearAllReservations,
+  clearReservation,
+  pruneStaleReservations,
+} from './utils/paymentSession.js';
 
 // Kiểm tra quyền admin ở một chỗ duy nhất (role có thể là 'admin' hoặc 'ADMIN')
 const isAdminUser = (u) => Boolean(u && (u.role === 'admin' || u.role === 'ADMIN'));
@@ -169,6 +174,7 @@ function AppShell() {
   const userTokenRef = useRef(user?.token || null);
   const handledExpiredTokenRef = useRef(null);
   const initialExpiredNotifiedRef = useRef(false);
+  const initialReservationCleanedRef = useRef(false);
 
   useEffect(() => {
     toastRef.current = toast;
@@ -177,8 +183,20 @@ function AppShell() {
     userTokenRef.current = user?.token || null;
   });
 
-  // Effect 1: Thông báo 1 lần khi mở lại web với phiên đã quá hạn
+  // Effect 1: Dọn localStorage phiên giữ chỗ cũ khi khởi động và thông báo 1 lần nếu phiên đăng nhập quá hạn
   useEffect(() => {
+    if (!initialReservationCleanedRef.current) {
+      initialReservationCleanedRef.current = true;
+      if (initialAuth.wasExpired) {
+        clearAllReservations({ silent: true });
+      } else {
+        pruneStaleReservations(initialAuth.user?.id || null, {
+          preserveInFlight: true,
+          silent: true,
+        });
+      }
+    }
+
     if (!initialAuth.wasExpired || initialExpiredNotifiedRef.current) return;
     initialExpiredNotifiedRef.current = true;
     toastRef.current.info(DEFAULT_AUTH_EXPIRED_MESSAGE);
@@ -188,7 +206,7 @@ function AppShell() {
       saveAfterLoginPath(`${pathname}${search}${hash}`);
       navigateRef.current('/login', { replace: true });
     }
-  }, [initialAuth.wasExpired]);
+  }, [initialAuth.wasExpired, initialAuth.user?.id]);
 
   const activeToken = user?.token || null;
   const activeServerOffsetMs = Number.isFinite(Number(user?.serverOffsetMs))
@@ -208,6 +226,7 @@ function AppShell() {
       handledExpiredTokenRef.current = activeToken;
 
       clearStoredAuth();
+      clearAllReservations({ silent: false });
       setUser(null);
       setCart([]);
       toastRef.current.info(reason || DEFAULT_AUTH_EXPIRED_MESSAGE);
@@ -290,6 +309,7 @@ function AppShell() {
 
       if (prevToken && !nextUser) {
         handledExpiredTokenRef.current = prevToken;
+        clearAllReservations({ silent: false });
         setUser(null);
         setCart([]);
         toastRef.current.info('Phiên đăng nhập đã kết thúc ở tab khác.');
@@ -301,6 +321,7 @@ function AppShell() {
         }
       } else if (!prevToken && nextUser) {
         handledExpiredTokenRef.current = null;
+        pruneStaleReservations(nextUser?.id || null, { preserveInFlight: false, silent: false });
         setUser(nextUser);
         if (locationRef.current.pathname === '/login') {
           const target = isAdminUser(nextUser)
@@ -310,6 +331,7 @@ function AppShell() {
         }
       } else if (prevToken && nextUser && nextUser.token !== prevToken) {
         handledExpiredTokenRef.current = null;
+        pruneStaleReservations(nextUser?.id || null, { preserveInFlight: false, silent: false });
         setUser(nextUser);
         setCart([]);
       }
@@ -422,6 +444,7 @@ function AppShell() {
     handledExpiredTokenRef.current = null;
     setUser(userData);
     writeStoredUser(userData);
+    pruneStaleReservations(userData?.id || null, { preserveInFlight: false, silent: false });
     if (userData?.token) {
       loadUserOrders(userData.token, true);
     }
@@ -452,6 +475,7 @@ function AppShell() {
       writeStoredUser(nextUser);
     } else {
       clearStoredAuth();
+      clearAllReservations({ silent: false });
     }
   };
 
@@ -459,6 +483,7 @@ function AppShell() {
     handledExpiredTokenRef.current = null;
     setUser(null);
     clearStoredAuth();
+    clearAllReservations({ silent: false });
     setCart([]);
     navigate('/events');
   };
@@ -556,6 +581,7 @@ function AppShell() {
   const handleDeleteEvent = async (id) => {
     try {
       await deleteEventOnBackend(id, user?.token);
+      clearReservation(id);
       setEventsList((prev) => prev.filter((e) => e.id !== id));
       toast.success('Đã xóa sự kiện thành công khỏi hệ thống Backend!');
     } catch (err) {
