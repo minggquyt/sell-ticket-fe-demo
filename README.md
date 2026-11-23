@@ -112,3 +112,12 @@ Khóa tương tác chọn ghế (Seated-based) và stepper `+/-` (Zone-based) tr
 - **Khóa xuyên sự kiện & an toàn chuyển trang:** đồng bộ `otherEventSession` qua `getActiveSessions` + `RESERVATION_CHANGED_EVENT` / `storage` (tự mở khóa ngay khi hủy ở `PendingPaymentBanner`), gắn `key={currentEvent.id}` tại `App.jsx` để tránh rò state giữa 2 sự kiện.
 - **Đồng bộ `MAX_TICKETS_PER_ORDER = 4` & dọn mã nguồn:** bỏ toàn bộ nhãn/điều kiện số `5` rải rác ở `EventDetailPage`, `SeatMap`, `ZoneSelector`, `BookingSummary`, `EventsPage`, `EventFormModal`; xóa `console.log` debug, bỏ `.clineignore` khỏi `.gitignore` và dọn sạch lỗi/warning ESLint ở `EventDetailPage.jsx`.
 - **Chi tiết đầy đủ cho team FE:** xem [docs/LOCK_SEAT_SELECTION_DURING_HOLD.md](./docs/LOCK_SEAT_SELECTION_DURING_HOLD.md).
+
+## 23/11/2026 — Hoàn thiện tự động đăng xuất khi token hết hạn
+
+Hoàn thiện luồng phát hiện và tự động đăng xuất khi JWT hết hạn hoặc bị vô hiệu (đồng bộ với chuẩn `401`/`403` và `serverTime` mới của Backend), đảm bảo không để người dùng thao tác với token chết hay hiện thông báo kỹ thuật trùng lặp.
+
+- **Quản lý phiên tập trung (`src/utils/authSession.js`):** gom toàn bộ đọc/ghi/xóa `sellticket_user` và `sellticket_after_login_path`, bù lệch đồng hồ client–server (`serverOffsetMs`), tách bạch lỗi auth `401`/`data.code` với `403 FORBIDDEN`, và lọc message kỹ thuật thành thông điệp thân thiện duy nhất.
+- **Vòng đời & đa tab (`App.jsx`, `LoginPage.jsx`, `Toast.jsx`):** memoize `toast` trong `ToastProvider`, tách 3 `useEffect` (thông báo mở lại tab đã quá hạn, hẹn giờ khớp `skewSeconds` + cap 32-bit `2^31 - 1 ms` + khóa idempotent chống logout lặp, đồng bộ đa tab 2 chiều kể cả `localStorage.clear()`), bảo toàn return path cho route bảo vệ như `/checkout/:orderCode`.
+- **API / SSE & Callers (`eventService.js`, `EventDetailPage`, `useOrderCheckout`, `CheckoutPage`, `PendingPaymentBanner`, `ProfilePage`, `AdminPage`):** đồng bộ `notifyAuthExpired` cho cả REST và SSE (`subscribeOrderEvents`), gắn `err.isAuthError = true` để caller không bắn chồng toast lỗi, kiểm tra chủ động `isJwtExpired` trước giữ ghế/thanh toán và tách polling ngầm `authSource: 'background'`.
+- **Chi tiết đầy đủ cho team FE:** xem [docs/AUTO_LOGOUT_EXPIRED_TOKEN.md](./docs/AUTO_LOGOUT_EXPIRED_TOKEN.md).
