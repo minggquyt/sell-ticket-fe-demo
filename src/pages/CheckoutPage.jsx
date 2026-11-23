@@ -25,6 +25,7 @@ import {
 import { useOrderCheckout } from '../hooks/useOrderCheckout.js';
 import { formatVND } from '../utils/format.js';
 import { formatCountdown } from '../utils/paymentSession.js';
+import { saveAfterLoginPath } from '../utils/authSession.js';
 import {
   fetchVietQrBanksCached,
   findBankByBin,
@@ -155,17 +156,13 @@ function CheckoutPageContent({
     setShowCancelModal(false);
     if (res.ok) {
       toast.info(`Đã hủy đơn hàng #${orderCode} và mở lại ghế.`);
-    } else if (res.message) {
+    } else if (!res.authExpired && res.message) {
       toast.warning(res.message);
     }
   };
 
   const handleGoToLogin = () => {
-    try {
-      sessionStorage.setItem('sellticket_after_login_path', `/checkout/${orderCode}`);
-    } catch {
-      // Bỏ qua nếu sessionStorage bị chặn
-    }
+    saveAfterLoginPath(`/checkout/${orderCode}`);
     onRequireLogin?.();
   };
 

@@ -59,7 +59,9 @@ export default function ProfilePage({ user, onBack, onRequireLogin, onSaved, onU
 
     fetchMyBank(user.token)
       .then(applyProfile)
-      .catch((err) => setBanksError(err.message));
+      .catch((err) => {
+        if (!err?.isAuthError) setBanksError(err.message);
+      });
     fetchVietQrBanks()
       .then(setBanks)
       .catch((err) => setBanksError(err.message));
@@ -128,6 +130,7 @@ export default function ProfilePage({ user, onBack, onRequireLogin, onSaved, onU
       toast.success('Đã cập nhật số điện thoại.');
       onSaved?.();
     } catch (err) {
+      if (err?.isAuthError) return;
       toast.error(err.message || 'Không thể cập nhật số điện thoại.');
     }
   };
@@ -162,6 +165,7 @@ export default function ProfilePage({ user, onBack, onRequireLogin, onSaved, onU
       toast.success('Đã lưu thông tin ngân hàng nhận hoàn tiền!');
       onSaved?.();
     } catch (err) {
+      if (err?.isAuthError) return;
       toast.error(err.message);
     } finally {
       setIsSaving(false);

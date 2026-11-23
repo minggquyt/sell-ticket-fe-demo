@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from './components/Navbar';
 import PendingPaymentBanner from './components/PendingPaymentBanner';
 import LoginPage from './pages/LoginPage';
@@ -26,10 +26,18 @@ import './App.css';
 import { useToast } from './components/toastContext.js';
 import {
   AUTH_EXPIRED_EVENT,
+  AUTH_USER_STORAGE_KEY,
+  DEFAULT_AUTH_EXPIRED_MESSAGE,
+  MAX_SETTIMEOUT_DELAY_MS,
   clearStoredAuth,
-  getJwtExpiryMs,
+  consumeAfterLoginPath,
+  getRemainingTokenMs,
   isJwtExpired,
+  isProtectedPathname,
+  readInitialAuthState,
   readStoredUser,
+  saveAfterLoginPath,
+  writeStoredUser,
 } from './utils/authSession.js';
 
 // Kiểm tra quyền admin ở một chỗ duy nhất (role có thể là 'admin' hoặc 'ADMIN')
@@ -113,7 +121,8 @@ function EventDetailRoute({
 function AppShell() {
   const [eventsList, setEventsList] = useState([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
-  const [user, setUser] = useState(() => readStoredUser());
+  const [initialAuth] = useState(() => readInitialAuthState());
+  const [user, setUser] = useState(() => initialAuth.user);
   const [cart, setCart] = useState([]); // Danh sách toàn bộ đơn đặt vé từ Database (Lịch sử đặt vé)
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
@@ -154,69 +163,166 @@ function AppShell() {
   }
 
   const toast = useToast();
+  const toastRef = useRef(toast);
+  const navigateRef = useRef(navigate);
+  const locationRef = useRef(location);
+  const userTokenRef = useRef(user?.token || null);
+  const handledExpiredTokenRef = useRef(null);
+  const initialExpiredNotifiedRef = useRef(false);
 
   useEffect(() => {
-    if (!user?.token) return undefined;
+    toastRef.current = toast;
+    navigateRef.current = navigate;
+    locationRef.current = location;
+    userTokenRef.current = user?.token || null;
+  });
 
-    const performLogout = (reason = 'Phiên đăng nhập đã hết hạn.') => {
+  // Effect 1: Thông báo 1 lần khi mở lại web với phiên đã quá hạn
+  useEffect(() => {
+    if (!initialAuth.wasExpired || initialExpiredNotifiedRef.current) return;
+    initialExpiredNotifiedRef.current = true;
+    toastRef.current.info(DEFAULT_AUTH_EXPIRED_MESSAGE);
+
+    const { pathname, search, hash } = locationRef.current;
+    if (isProtectedPathname(pathname)) {
+      saveAfterLoginPath(`${pathname}${search}${hash}`);
+      navigateRef.current('/login', { replace: true });
+    }
+  }, [initialAuth.wasExpired]);
+
+  const activeToken = user?.token || null;
+  const activeServerOffsetMs = Number.isFinite(Number(user?.serverOffsetMs))
+    ? Number(user.serverOffsetMs)
+    : 0;
+
+  // Effect 2: Theo dõi hết hạn phiên đang hoạt động (timer bù lệch đồng hồ + focus/visibility + API/SSE event)
+  useEffect(() => {
+    if (!activeToken) return undefined;
+
+    if (handledExpiredTokenRef.current && handledExpiredTokenRef.current !== activeToken) {
+      handledExpiredTokenRef.current = null;
+    }
+
+    const performAutoLogout = (reason = DEFAULT_AUTH_EXPIRED_MESSAGE, source = 'timer') => {
+      if (handledExpiredTokenRef.current === activeToken) return;
+      handledExpiredTokenRef.current = activeToken;
+
       clearStoredAuth();
       setUser(null);
       setCart([]);
-      toast.info(reason);
-      navigate('/login', { replace: true });
+      toastRef.current.info(reason || DEFAULT_AUTH_EXPIRED_MESSAGE);
+
+      const { pathname, search, hash } = locationRef.current;
+      if (
+        isProtectedPathname(pathname) ||
+        source === 'action' ||
+        source === 'sse' ||
+        source === 'proactive'
+      ) {
+        saveAfterLoginPath(`${pathname}${search}${hash}`);
+        navigateRef.current('/login', { replace: true });
+      }
     };
+
+    let timeoutId = null;
+    const scheduleExpiryCheck = () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      const remainingMs = getRemainingTokenMs(activeToken, {
+        serverOffsetMs: activeServerOffsetMs,
+      });
+      if (remainingMs <= 0) {
+        timeoutId = window.setTimeout(() => {
+          performAutoLogout(DEFAULT_AUTH_EXPIRED_MESSAGE, 'timer');
+        }, 0);
+        return;
+      }
+      const delay = Math.min(remainingMs + 50, MAX_SETTIMEOUT_DELAY_MS);
+      timeoutId = window.setTimeout(() => {
+        if (isJwtExpired(activeToken, { serverOffsetMs: activeServerOffsetMs })) {
+          performAutoLogout(DEFAULT_AUTH_EXPIRED_MESSAGE, 'timer');
+        } else {
+          scheduleExpiryCheck();
+        }
+      }, delay);
+    };
+
+    scheduleExpiryCheck();
 
     const checkExpiry = () => {
-      if (isJwtExpired(user.token)) performLogout();
+      if (isJwtExpired(activeToken, { serverOffsetMs: activeServerOffsetMs })) {
+        performAutoLogout(DEFAULT_AUTH_EXPIRED_MESSAGE, 'timer');
+      }
     };
-
-    checkExpiry();
-
-    const expiresAt = getJwtExpiryMs(user.token);
-    const timeout = expiresAt
-      ? window.setTimeout(checkExpiry, Math.max(0, expiresAt - Date.now() + 50))
-      : null;
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') checkExpiry();
     };
-    const handleStorage = (event) => {
-      if (event.key !== 'sellticket_user') return;
-      const nextUser = readStoredUser();
-      setUser(nextUser);
-      if (!nextUser) setCart([]);
-    };
+
     const handleAuthExpired = (event) => {
-      performLogout(event.detail?.reason || 'Phiên đăng nhập đã hết hạn.');
+      performAutoLogout(
+        event.detail?.reason || DEFAULT_AUTH_EXPIRED_MESSAGE,
+        event.detail?.source || 'action',
+      );
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', checkExpiry);
-    window.addEventListener('storage', handleStorage);
     window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
 
     return () => {
-      if (timeout) window.clearTimeout(timeout);
+      if (timeoutId) window.clearTimeout(timeoutId);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', checkExpiry);
-      window.removeEventListener('storage', handleStorage);
       window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
     };
-  }, [user?.token, navigate, toast]);
+  }, [activeToken, activeServerOffsetMs]);
+
+  // Effect 3: Đồng bộ đa tab 2 chiều (luôn chạy kể cả khi chưa login và khi localStorage.clear())
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.key !== null && event.key !== AUTH_USER_STORAGE_KEY) return;
+
+      const prevToken = userTokenRef.current;
+      const nextUser = readStoredUser();
+
+      if (prevToken && !nextUser) {
+        handledExpiredTokenRef.current = prevToken;
+        setUser(null);
+        setCart([]);
+        toastRef.current.info('Phiên đăng nhập đã kết thúc ở tab khác.');
+
+        const { pathname, search, hash } = locationRef.current;
+        if (isProtectedPathname(pathname)) {
+          saveAfterLoginPath(`${pathname}${search}${hash}`);
+          navigateRef.current('/login', { replace: true });
+        }
+      } else if (!prevToken && nextUser) {
+        handledExpiredTokenRef.current = null;
+        setUser(nextUser);
+        if (locationRef.current.pathname === '/login') {
+          const target = isAdminUser(nextUser)
+            ? '/admin'
+            : consumeAfterLoginPath() || '/events';
+          navigateRef.current(target, { replace: true });
+        }
+      } else if (prevToken && nextUser && nextUser.token !== prevToken) {
+        handledExpiredTokenRef.current = null;
+        setUser(nextUser);
+        setCart([]);
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   // Tải lịch sử đặt vé của người dùng từ Database (GET /api/orders/my-history)
   const loadUserOrders = useCallback(
     async (tokenOverride = null, silent = false) => {
-      const activeToken =
-        tokenOverride ||
-        user?.token ||
-        (() => {
-          try {
-            return JSON.parse(localStorage.getItem('sellticket_user') || 'null')?.token;
-          } catch {
-            return null;
-          }
-        })();
+      const activeToken = tokenOverride || user?.token || readStoredUser()?.token || null;
 
       if (!activeToken) {
         setCart([]);
@@ -313,28 +419,25 @@ function AppShell() {
   };
 
   const handleLoginSuccess = (userData) => {
+    handledExpiredTokenRef.current = null;
     setUser(userData);
-    localStorage.setItem('sellticket_user', JSON.stringify(userData));
+    writeStoredUser(userData);
     if (userData?.token) {
       loadUserOrders(userData.token, true);
     }
-    let afterLoginPath = null;
+    const afterLoginPath = consumeAfterLoginPath();
+    let afterClaimTarget = null;
     try {
-      afterLoginPath = sessionStorage.getItem('sellticket_after_login_path');
-      if (afterLoginPath) sessionStorage.removeItem('sellticket_after_login_path');
+      afterClaimTarget = sessionStorage.getItem('sellticket_after_login');
+      if (afterClaimTarget) sessionStorage.removeItem('sellticket_after_login');
     } catch {
-      /* Bỏ qua */
+      /* Bỏ qua: trình duyệt chặn sessionStorage */
     }
     if (isAdminUser(userData)) {
       navigate('/admin');
-    } else if (afterLoginPath && afterLoginPath.startsWith('/')) {
+    } else if (afterLoginPath) {
       navigate(afterLoginPath);
-    } else if (sessionStorage.getItem('sellticket_after_login') === 'my-tickets') {
-      try {
-        sessionStorage.removeItem('sellticket_after_login');
-      } catch {
-        /* Bỏ qua: trình duyệt chặn sessionStorage */
-      }
+    } else if (afterClaimTarget === 'my-tickets') {
       navigate('/my-tickets');
     } else if (lastViewedEventId) {
       navigateTo('detail', lastViewedEventId);
@@ -346,15 +449,16 @@ function AppShell() {
   const handleUserUpdated = (nextUser) => {
     setUser(nextUser);
     if (nextUser) {
-      localStorage.setItem('sellticket_user', JSON.stringify(nextUser));
+      writeStoredUser(nextUser);
     } else {
-      localStorage.removeItem('sellticket_user');
+      clearStoredAuth();
     }
   };
 
   const handleLogout = () => {
+    handledExpiredTokenRef.current = null;
     setUser(null);
-    localStorage.removeItem('sellticket_user');
+    clearStoredAuth();
     setCart([]);
     navigate('/events');
   };
@@ -431,6 +535,7 @@ function AppShell() {
       toast.success('Thêm sự kiện mới thành công lên hệ thống Backend!');
     } catch (err) {
       console.error(err);
+      if (err?.isAuthError) return;
       toast.error('Không thể thêm sự kiện: ' + err.message);
     }
   };
@@ -443,6 +548,7 @@ function AppShell() {
       toast.success('Cập nhật thông tin sự kiện và giá vé thành công lên hệ thống!');
     } catch (err) {
       console.error(err);
+      if (err?.isAuthError) return;
       toast.error('Không thể cập nhật sự kiện: ' + err.message);
     }
   };
@@ -454,6 +560,7 @@ function AppShell() {
       toast.success('Đã xóa sự kiện thành công khỏi hệ thống Backend!');
     } catch (err) {
       console.error(err);
+      if (err?.isAuthError) return;
       toast.error('Không thể xóa sự kiện: ' + err.message);
     }
   };

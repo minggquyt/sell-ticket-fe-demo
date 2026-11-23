@@ -1,6 +1,10 @@
 import { formatEventDate, formatEventTime } from '../data/events.js';
 import { getRowLetter } from '../utils/seatLayout.js';
-import { isAuthError, notifyAuthExpired } from '../utils/authSession.js';
+import {
+  getFriendlyAuthExpiredMessage,
+  isAuthError,
+  notifyAuthExpired,
+} from '../utils/authSession.js';
 
 // Cấu hình URL Backend: ưu tiên localhost khi chạy môi trường local dev, fallback VITE_API_URL
 export const API_BASE_URL = (
@@ -15,7 +19,10 @@ export const API_BASE_URL = (
  * - Chuẩn hóa header, parse JSON an toàn, kiểm tra envelope { success, statusCode, message, data }
  * - Ném Error(message) khi thất bại và trả về dữ liệu nghiệp vụ tinh khiết (data) khi thành công
  */
-async function apiRequest(path, { method = 'GET', body, token, fallbackError } = {}) {
+async function apiRequest(
+  path,
+  { method = 'GET', body, token, fallbackError, authSource = 'action' } = {},
+) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -29,11 +36,16 @@ async function apiRequest(path, { method = 'GET', body, token, fallbackError } =
   const payload = await res.json().catch(() => null);
 
   if (!res.ok || payload?.success === false) {
-    const err = new Error(payload?.message || fallbackError || `Lỗi máy chủ (HTTP ${res.status}).`);
+    const authErr = Boolean(token) && isAuthError(res.status, payload);
+    const message = authErr
+      ? getFriendlyAuthExpiredMessage(payload)
+      : payload?.message || fallbackError || `Lỗi máy chủ (HTTP ${res.status}).`;
+    const err = new Error(message);
     err.status = res.status;
     err.payload = payload;
-    if (isAuthError(res.status, payload)) {
-      notifyAuthExpired(payload?.message || 'Phiên đăng nhập đã hết hạn.');
+    if (authErr) {
+      err.isAuthError = true;
+      notifyAuthExpired(message, { source: authSource });
     }
     throw err;
   }
@@ -41,9 +53,9 @@ async function apiRequest(path, { method = 'GET', body, token, fallbackError } =
   return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
 }
 
-async function apiListRequest(path, { token, logLabel } = {}) {
+async function apiListRequest(path, { token, logLabel, authSource = 'action' } = {}) {
   try {
-    const data = await apiRequest(path, { token });
+    const data = await apiRequest(path, { token, authSource });
     return Array.isArray(data) ? data : [];
   } catch (err) {
     console.error(`❌ ${logLabel}:`, err);
@@ -457,10 +469,15 @@ export async function fetchOrderStatus(orderCode, token) {
  * Lấy dữ liệu thanh toán QR của đơn hàng (Route: GET /api/orders/:orderCode/payment)
  * Mặc định chỉ đọc DB; truyền sync=true ở các mốc tự động để đối soát PayOS (BE throttle 10s).
  */
-export async function fetchOrderPayment(orderCode, token, { sync = false } = {}) {
+export async function fetchOrderPayment(
+  orderCode,
+  token,
+  { sync = false, background = false } = {},
+) {
   const query = sync ? '?sync=1' : '';
   return apiRequest(`/orders/${encodeURIComponent(orderCode)}/payment${query}`, {
     token,
+    authSource: background ? 'background' : 'action',
     fallbackError: 'Không thể tải thông tin thanh toán đơn hàng.',
   });
 }
@@ -494,15 +511,21 @@ export async function subscribeOrderEvents(
 
   if (!res.ok) {
     const payload = await res.json().catch(() => null);
-    const err = new Error(payload?.message || `Lỗi kết nối SSE (HTTP ${res.status}).`);
+    const authErr = isAuthError(res.status, payload);
+    const message = authErr
+      ? getFriendlyAuthExpiredMessage(payload)
+      : payload?.message || `Lỗi kết nối SSE (HTTP ${res.status}).`;
+    const err = new Error(message);
     err.status = res.status;
     err.payload = payload;
 
-    if (res.status === 401 || res.status === 403) {
+    if (authErr) {
+      err.isAuthError = true;
+      notifyAuthExpired(message, { source: 'sse' });
       onAuthError?.(err);
       return;
     }
-    if (res.status === 404) {
+    if (res.status === 403 || res.status === 404) {
       onNotFound?.(err);
       return;
     }
@@ -614,6 +637,7 @@ export async function fetchMyActiveSession(token) {
   }
   const promise = apiRequest('/seats/my-active-session', {
     token,
+    authSource: 'background',
     fallbackError: 'Không thể đồng bộ phiên giữ chỗ hiện tại.',
   }).finally(() => {
     if (activeSessionInFlight?.promise === promise) {
@@ -631,6 +655,7 @@ export async function fetchMyOrderHistory(token) {
   if (!token) return [];
   return apiListRequest('/orders/my-history', {
     token,
+    authSource: 'background',
     logLabel: 'Lỗi tải lịch sử đặt vé từ Backend',
   });
 }

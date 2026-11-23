@@ -10,6 +10,7 @@ import {
   RESERVATION_STORAGE_PREFIX,
   clearReservation,
 } from '../utils/paymentSession.js';
+import { isAuthError } from '../utils/authSession.js';
 
 const TERMINAL_STATUSES = new Set([
   'SUCCESS',
@@ -157,13 +158,13 @@ export function useOrderCheckout({
           const data = await fetchOrderPayment(orderCode, token, { sync });
           return applyServerOrder(data);
         } catch (err) {
-          if (err?.status === 401 || err?.status === 403) {
+          if (err?.isAuthError || isAuthError(err?.status, err?.payload)) {
             setAuthExpired(true);
             setIsLoading(false);
             setSseConnected(false);
             return null;
           }
-          if (err?.status === 404 || err?.status === 400) {
+          if (err?.status === 403 || err?.status === 404 || err?.status === 400) {
             setNotFound(true);
             setLoadError(err.message || 'Không tìm thấy đơn hàng.');
             setIsLoading(false);
@@ -214,10 +215,10 @@ export function useOrderCheckout({
     : 0;
 
   let uiState = 'LOADING';
-  if (!token) {
-    uiState = 'AUTH_REQUIRED';
-  } else if (authExpired) {
+  if (authExpired) {
     uiState = 'AUTH_EXPIRED';
+  } else if (!token) {
+    uiState = 'AUTH_REQUIRED';
   } else if (notFound) {
     uiState = 'NOT_FOUND';
   } else if (!order && isLoading) {
@@ -425,6 +426,11 @@ export function useOrderCheckout({
       const latest = await loadOrderPayment({ sync: false });
       return { ok: true, order: latest };
     } catch (err) {
+      if (err?.isAuthError || isAuthError(err?.status, err?.payload)) {
+        setAuthExpired(true);
+        setSseConnected(false);
+        return { ok: false, authExpired: true, message: '' };
+      }
       // Nếu race condition (409 do vừa SUCCESS hoặc vừa vào CONFIRMING), đồng bộ lại ngay trạng thái thật
       const latest = await loadOrderPayment({ sync: false });
       return {
