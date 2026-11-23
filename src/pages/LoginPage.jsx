@@ -1,7 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Mail, Lock, User, Phone, ArrowRight, ShieldCheck, AlertCircle, KeyRound } from 'lucide-react';
-import { loginUser, registerUser } from '../services/eventService';
+import {
+  Mail,
+  Lock,
+  User,
+  Phone,
+  ArrowRight,
+  ShieldCheck,
+  AlertCircle,
+  KeyRound,
+  Loader2,
+} from 'lucide-react';
+import {
+  loginUser,
+  registerUser,
+  resendRegistrationOtp,
+  verifyRegistrationOtp,
+  cancelRegistration,
+} from '../services/eventService';
 import {
   checkEmailStatus,
   requestPasswordSetup,
@@ -26,6 +42,25 @@ export default function LoginPage({ onLoginSuccess }) {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [registerStep, setRegisterStep] = useState('details');
+  const [registrationId, setRegistrationId] = useState('');
+  const [registrationEmail, setRegistrationEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpLocked, setOtpLocked] = useState(false);
+  const [resendDisabled, setResendDisabled] = useState(false);
+  const [resendAvailableAt, setResendAvailableAt] = useState(0);
+  const [otpExpiresAt, setOtpExpiresAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [deliveryWarning, setDeliveryWarning] = useState(false);
+  const otpInputRef = useRef(null);
+  const registerSubmittingRef = useRef(false);
+  const verifySubmittingRef = useRef(false);
+  const resendSubmittingRef = useRef(false);
+  const cancelSubmittingRef = useRef(false);
   // Luồng nhận lại vé: email đã tồn tại + password null → xác thực email
   // (mã hoặc link) → đặt password, GIỮ NGUYÊN userid, thấy lại vé đã mua.
   const [claimEmail, setClaimEmail] = useState(() => searchParams.get('email') || '');
@@ -39,6 +74,173 @@ export default function LoginPage({ onLoginSuccess }) {
     Boolean(searchParams.get('mode') === 'claim' && searchParams.get('code')),
   );
   const [showClaimHint, setShowClaimHint] = useState(false);
+
+  const resendSeconds = Math.max(0, Math.ceil((resendAvailableAt - now) / 1000));
+  const expirySeconds = Math.max(0, Math.ceil((otpExpiresAt - now) / 1000));
+
+  // --- PERSISTENCE: Lưu và khôi phục pending registration ---
+  useEffect(() => {
+    if (mode !== 'register' || registerStep !== 'otp') return;
+    if (!registrationId || !registrationEmail) return;
+    try {
+      sessionStorage.setItem(
+        'sellticket_pending_registration',
+        JSON.stringify({
+          registrationId,
+          registrationEmail,
+          otpExpiresAt,
+          resendAvailableAt,
+        }),
+      );
+    } catch {
+      // Bỏ qua lỗi storage
+    }
+  }, [mode, registerStep, registrationId, registrationEmail, otpExpiresAt, resendAvailableAt]);
+
+  useEffect(() => {
+    if (mode !== 'register' || registerStep !== 'details') return;
+    try {
+      const stored = sessionStorage.getItem('sellticket_pending_registration');
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (!parsed.registrationId || !parsed.registrationEmail) return;
+      const expiry = Number(parsed.otpExpiresAt) || 0;
+      const resend = Number(parsed.resendAvailableAt) || 0;
+      const timestamp = Date.now();
+      if (expiry > 0 && expiry < timestamp) {
+        sessionStorage.removeItem('sellticket_pending_registration');
+        return;
+      }
+      setRegistrationId(parsed.registrationId);
+      setRegistrationEmail(parsed.registrationEmail);
+      setOtpExpiresAt(expiry);
+      setResendAvailableAt(resend);
+      setNow(timestamp);
+      setRegisterStep('otp');
+      toast.info('Phiên đăng ký trước đó vẫn đang chờ xác minh.');
+    } catch {
+      sessionStorage.removeItem('sellticket_pending_registration');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode !== 'register' || registerStep !== 'otp') return undefined;
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
+    otpInputRef.current?.focus();
+    return () => window.clearInterval(intervalId);
+  }, [mode, registerStep]);
+
+  const maskEmail = (value) => {
+    const [local, domain] = String(value).split('@');
+    if (!local || !domain) return value;
+    return `${local.slice(0, Math.min(2, local.length))}${'*'.repeat(Math.max(1, local.length - 2))}@${domain}`;
+  };
+
+  const resetPendingRegistration = () => {
+    setRegisterStep('details');
+    setRegistrationId('');
+    setRegistrationEmail('');
+    setOtp('');
+    setOtpLocked(false);
+    setResendDisabled(false);
+    setResendAvailableAt(0);
+    setOtpExpiresAt(0);
+    setDeliveryWarning(false);
+    try {
+      sessionStorage.removeItem('sellticket_pending_registration');
+    } catch {
+      // Bỏ qua
+    }
+  };
+
+  const syncOtpTimers = ({ expiresIn = 0, resendAfter = 0 } = {}) => {
+    const timestamp = Date.now();
+    setNow(timestamp);
+    setOtpExpiresAt(timestamp + Math.max(0, Number(expiresIn) || 0) * 1000);
+    setResendAvailableAt(timestamp + Math.max(0, Number(resendAfter) || 0) * 1000);
+  };
+
+  const handleRegistrationError = (err, action) => {
+    const code = err.code || err.payload?.data?.code;
+    const message = err.message || 'Yêu cầu không thành công. Vui lòng thử lại.';
+
+    // --- RESUME: Xử lý REGISTRATION_PENDING ---
+    if (code === 'REGISTRATION_PENDING' && err.payload?.data) {
+      const { registrationId: resumeId, expiresIn, resendAfter } = err.payload.data;
+      if (resumeId) {
+        setRegistrationId(resumeId);
+        setRegistrationEmail(email.trim().toLowerCase());
+        setRegisterStep('otp');
+        setOtp('');
+        setOtpLocked(false);
+        setResendDisabled(false);
+        syncOtpTimers({ expiresIn, resendAfter });
+        toast.info('Yêu cầu đăng ký trước đó vẫn đang chờ xác minh.');
+        return;
+      }
+    }
+
+    // --- EMAIL DELIVERY FAIL: Vẫn tạo session ---
+    if (code === 'EMAIL_DELIVERY_UNAVAILABLE' && err.payload?.data) {
+      const { registrationId: failId, expiresIn, resendAfter } = err.payload.data;
+      if (failId && action === 'register') {
+        setRegistrationId(failId);
+        setRegistrationEmail(email.trim().toLowerCase());
+        setRegisterStep('otp');
+        setOtp('');
+        setOtpLocked(false);
+        setResendDisabled(false);
+        setDeliveryWarning(true);
+        syncOtpTimers({ expiresIn, resendAfter });
+        setError('Chưa thể gửi email OTP. Vui lòng thử gửi lại sau.');
+        return;
+      }
+    }
+
+    if (code === 'REGISTRATION_INVALID' || code === 'REGISTRATION_EXPIRED') {
+      resetPendingRegistration();
+      setError(
+        code === 'REGISTRATION_EXPIRED'
+          ? 'Phiên đăng ký đã hết hạn. Vui lòng đăng ký lại.'
+          : 'Phiên đăng ký không hợp lệ. Vui lòng bắt đầu lại.',
+      );
+      return;
+    }
+    if (code === 'REGISTRATION_COMPLETED') {
+      resetPendingRegistration();
+      setMode('login');
+      setEmail(registrationEmail || email);
+      toast.info('Tài khoản đã hoàn tất đăng ký. Vui lòng đăng nhập.');
+      return;
+    }
+    if (code === 'RESEND_COOLDOWN' || code === 'RATE_LIMITED') {
+      const retryAfter = err.retryAfter || 60;
+      setNow(Date.now());
+      setResendAvailableAt(Date.now() + retryAfter * 1000);
+    }
+    if (code === 'OTP_LOCKED') setOtpLocked(true);
+    if (code === 'RESEND_LIMIT_REACHED') setResendDisabled(true);
+    if (code === 'INVALID_OTP') {
+      setOtp('');
+      window.setTimeout(() => otpInputRef.current?.focus(), 0);
+    }
+    if (code === 'EMAIL_ALREADY_EXISTS') setShowClaimHint(true);
+
+    const friendlyMessages = {
+      INVALID_OTP: 'Mã OTP không đúng. Vui lòng nhập lại.',
+      OTP_UNAVAILABLE: 'Mã OTP không còn sử dụng được. Vui lòng gửi lại mã mới.',
+      OTP_EXPIRED: 'Mã OTP đã hết hạn. Vui lòng gửi lại mã mới.',
+      OTP_LOCKED: 'Mã OTP đã bị khóa do nhập sai nhiều lần. Vui lòng gửi lại mã mới.',
+      RESEND_LIMIT_REACHED: 'Bạn đã đạt giới hạn gửi lại OTP. Vui lòng bắt đầu đăng ký lại.',
+      RESEND_COOLDOWN: 'Bạn chưa thể gửi lại mã. Vui lòng chờ hết thời gian đếm ngược.',
+      RATE_LIMITED: 'Bạn thao tác quá nhanh. Vui lòng thử lại sau.',
+      REGISTRATION_PENDING: 'Email này đang có phiên đăng ký chờ xác minh.',
+      EMAIL_ALREADY_EXISTS: 'Email này đã có tài khoản. Vui lòng đăng nhập hoặc nhận lại vé.',
+      EMAIL_DELIVERY_UNAVAILABLE: 'Chưa thể gửi email OTP. Vui lòng thử lại sau.',
+    };
+    setError(friendlyMessages[code] || message);
+    if (action === 'verify' && code !== 'INVALID_OTP') otpInputRef.current?.focus();
+  };
 
   const toUserData = (loginRes, fallbackName, fallbackPhone = null) => {
     const userData = loginRes.user;
@@ -69,8 +271,12 @@ export default function LoginPage({ onLoginSuccess }) {
       return;
     }
     if (mode === 'register') {
-      if (!fullName.trim()) {
-        setError('Vui lòng nhập họ và tên của bạn.');
+      if (!isValidGuestEmail(email)) {
+        setError('Vui lòng nhập địa chỉ email hợp lệ.');
+        return;
+      }
+      if (password.length < 6) {
+        setError('Mật khẩu phải có ít nhất 6 ký tự.');
         return;
       }
       const cleanPhone = phone.replace(/\D/g, '').trim();
@@ -78,13 +284,37 @@ export default function LoginPage({ onLoginSuccess }) {
         setError('Vui lòng nhập số điện thoại để đăng ký.');
         return;
       }
+      if (!/^\d{10,11}$/.test(cleanPhone)) {
+        setError('Số điện thoại phải gồm 10–11 chữ số.');
+        return;
+      }
       setPhone(cleanPhone);
     }
 
+    if (registerSubmittingRef.current) return;
+    registerSubmittingRef.current = true;
     setLoading(true);
     try {
       if (mode === 'register') {
-        await registerUser(email, password, fullName.trim(), phone.replace(/\D/g, '').trim());
+        const normalizedEmail = email.trim().toLowerCase();
+        const result = await registerUser(
+          normalizedEmail,
+          password,
+          fullName.trim(),
+          phone.replace(/\D/g, '').trim(),
+        );
+        if (!result?.registrationId) {
+          throw new Error('Dữ liệu đăng ký từ hệ thống không hợp lệ.');
+        }
+        setRegistrationId(result.registrationId);
+        setRegistrationEmail(normalizedEmail);
+        setRegisterStep('otp');
+        setOtp('');
+        setOtpLocked(false);
+        setResendDisabled(false);
+        syncOtpTimers(result);
+        toast.success('Mã OTP đã được gửi đến email của bạn.');
+        return;
       }
       const loginRes = await loginUser(email, password);
       if (!loginRes?.token || !loginRes?.user) {
@@ -98,18 +328,100 @@ export default function LoginPage({ onLoginSuccess }) {
         ),
       );
     } catch (err) {
+      if (mode === 'register') {
+        handleRegistrationError(err, 'register');
+        return;
+      }
       const message = err.message || 'Đăng nhập không thành công. Vui lòng thử lại.';
       setError(message);
-      // Đăng ký mà email đã tồn tại: có thể đây là tài khoản mua vé trước đây
-      // (password null) → gợi ý luồng nhận lại vé thay vì bắt đăng ký lại.
-      if (
-        mode === 'register' &&
-        /t.n t.i|exists|already|registered|duplicate/i.test(message)
-      ) {
-        setShowClaimHint(true);
-      }
     } finally {
       setLoading(false);
+      registerSubmittingRef.current = false;
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!/^\d{6}$/.test(otp)) {
+      setError('Mã OTP phải gồm đúng 6 chữ số.');
+      otpInputRef.current?.focus();
+      return;
+    }
+    if (verifySubmittingRef.current || otpLocked) return;
+    verifySubmittingRef.current = true;
+    setVerifyLoading(true);
+    try {
+      await verifyRegistrationOtp(registrationId, otp);
+      const verifiedEmail = registrationEmail;
+      resetPendingRegistration();
+      setMode('login');
+      setEmail(verifiedEmail);
+      setPassword('');
+      setError('');
+      toast.success('Đăng ký tài khoản thành công! Vui lòng đăng nhập.');
+    } catch (err) {
+      handleRegistrationError(err, 'verify');
+    } finally {
+      setVerifyLoading(false);
+      verifySubmittingRef.current = false;
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (
+      resendSubmittingRef.current ||
+      resendLoading ||
+      resendSeconds > 0 ||
+      resendDisabled ||
+      !registrationId
+    ) {
+      return;
+    }
+    setError('');
+    resendSubmittingRef.current = true;
+    setResendLoading(true);
+    try {
+      const result = await resendRegistrationOtp(registrationId);
+      setOtp('');
+      setOtpLocked(false);
+      setDeliveryWarning(false);
+      syncOtpTimers(result);
+      toast.success('Mã OTP mới đã được gửi.');
+      window.setTimeout(() => otpInputRef.current?.focus(), 0);
+    } catch (err) {
+      handleRegistrationError(err, 'resend');
+    } finally {
+      setResendLoading(false);
+      resendSubmittingRef.current = false;
+    }
+  };
+
+  // --- CANCEL: Hủy phiên đăng ký ---
+  const handleCancelRegistration = async () => {
+    if (cancelSubmittingRef.current || !registrationId) return;
+    setError('');
+    cancelSubmittingRef.current = true;
+    setCancelLoading(true);
+    try {
+      await cancelRegistration(registrationId);
+      resetPendingRegistration();
+      setCancelModalOpen(false);
+      toast.success('Đã hủy yêu cầu đăng ký.');
+    } catch (err) {
+      const code = err.code || err.payload?.data?.code;
+      if (code === 'RATE_LIMITED') {
+        const retryAfter = err.retryAfter || 60;
+        setError(`Bạn thao tác quá nhanh. Vui lòng thử lại sau ${retryAfter}s.`);
+        const timestamp = Date.now();
+        setNow(timestamp);
+        setResendAvailableAt(timestamp + retryAfter * 1000);
+      } else {
+        setError(err.message || 'Không thể hủy yêu cầu đăng ký.');
+      }
+    } finally {
+      setCancelLoading(false);
+      cancelSubmittingRef.current = false;
     }
   };
 
@@ -206,21 +518,25 @@ export default function LoginPage({ onLoginSuccess }) {
               ? 'Đăng nhập tài khoản'
               : mode === 'claim'
                 ? 'Nhận lại vé đã mua'
-                : 'Tạo tài khoản mới'}
+                : registerStep === 'otp'
+                  ? 'Xác minh Email OTP'
+                  : 'Tạo tài khoản mới'}
           </h2>
           <p className="login-sub">
             {mode === 'login'
               ? 'Đăng nhập bằng Email & Mật khẩu để tiếp tục'
               : mode === 'claim'
                 ? 'Bạn đã mua vé bằng email này trước đây? Xác thực email rồi đặt mật khẩu — giữ nguyên vé đã mua.'
-                : 'Đăng ký tài khoản mới để đặt vé & quản lý sự kiện'}
+                : registerStep === 'otp'
+                  ? `Nhập mã 6 số đã gửi tới ${maskEmail(registrationEmail)}`
+                  : 'Đăng ký tài khoản mới để đặt vé & quản lý sự kiện'}
           </p>
         </div>
 
         {/* Error Alert */}
         {error && (
-          <div className="login-error">
-            <AlertCircle size={16} />
+          <div className="login-error" role="alert" aria-live="assertive">
+            <AlertCircle size={16} aria-hidden="true" />
             {error}
           </div>
         )}
@@ -231,8 +547,8 @@ export default function LoginPage({ onLoginSuccess }) {
             <div>
               <div className="login-claim-hint-title">Email này có thể đã mua vé trước đây</div>
               <p className="login-claim-hint-text">
-                Nếu bạn từng mua vé bằng email này mà chưa đặt mật khẩu, hãy nhận lại vé thay vì
-                tạo tài khoản mới.
+                Nếu bạn từng mua vé bằng email này mà chưa đặt mật khẩu, hãy nhận lại vé thay vì tạo
+                tài khoản mới.
               </p>
               <button
                 type="button"
@@ -323,7 +639,10 @@ export default function LoginPage({ onLoginSuccess }) {
 
             <button type="submit" disabled={loading} className="glow-btn-primary login-submit">
               {loading ? (
-                'Đang xử lý...'
+                <>
+                  <Loader2 size={18} className="spin-animation" />
+                  Đang xử lý...
+                </>
               ) : (
                 <>
                   {claimStep === 'email' ? 'Gửi mã xác thực' : 'Đặt mật khẩu & Đăng nhập'}
@@ -332,86 +651,196 @@ export default function LoginPage({ onLoginSuccess }) {
               )}
             </button>
           </form>
+        ) : mode === 'register' && registerStep === 'otp' ? (
+          <form onSubmit={handleVerifyOtp}>
+            {deliveryWarning && (
+              <div className="login-error" role="alert" style={{ background: '#f97316' }}>
+                <AlertCircle size={16} aria-hidden="true" />
+                Email OTP chưa được gửi thành công. Vui lòng thử gửi lại sau khi hết thời gian chờ.
+              </div>
+            )}
+
+            <div className="login-otp-summary">
+              <Mail size={18} aria-hidden="true" />
+              <div>
+                <strong>Kiểm tra hộp thư của bạn</strong>
+                <p>
+                  Mã OTP có hiệu lực trong{' '}
+                  <span className={expirySeconds === 0 ? 'login-timer-expired' : ''}>
+                    {Math.floor(expirySeconds / 60)}:{String(expirySeconds % 60).padStart(2, '0')}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="login-group-last">
+              <label className="login-label" htmlFor="registration-otp">
+                Mã OTP
+              </label>
+              <div className="login-field login-otp-field">
+                <KeyRound size={18} color="var(--text-dim)" aria-hidden="true" />
+                <input
+                  ref={otpInputRef}
+                  id="registration-otp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={otp}
+                  onChange={(e) => {
+                    setOtp(e.target.value.replace(/\D/g, '').slice(0, 6));
+                    setError('');
+                  }}
+                  className="login-input login-otp-input"
+                  aria-describedby="registration-otp-help"
+                />
+              </div>
+              <p id="registration-otp-help" className="login-otp-help">
+                Không chia sẻ mã này với bất kỳ ai.
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={verifyLoading || otp.length !== 6 || otpLocked || expirySeconds === 0}
+              className="glow-btn-primary login-submit"
+            >
+              {verifyLoading ? (
+                <>
+                  <Loader2 size={18} className="spin-animation" />
+                  Đang xác minh...
+                </>
+              ) : (
+                'Xác minh & hoàn tất đăng ký'
+              )}
+            </button>
+
+            <div className="login-otp-actions">
+              <button
+                type="button"
+                className="login-toggle-btn-pink"
+                disabled={resendLoading || resendSeconds > 0 || resendDisabled}
+                onClick={handleResendOtp}
+              >
+                {resendLoading ? (
+                  <>
+                    <Loader2 size={14} className="spin-animation" />
+                    Đang gửi...
+                  </>
+                ) : resendDisabled ? (
+                  'Đã hết lượt gửi lại'
+                ) : resendSeconds > 0 ? (
+                  `Gửi lại sau ${resendSeconds}s`
+                ) : (
+                  'Gửi lại mã OTP'
+                )}
+              </button>
+              <button
+                type="button"
+                className="login-toggle-btn-primary"
+                disabled={verifyLoading || resendLoading || cancelLoading}
+                onClick={() => setCancelModalOpen(true)}
+              >
+                Đổi thông tin đăng ký
+              </button>
+            </div>
+          </form>
         ) : (
           <form onSubmit={handleEmailSubmit}>
-          {mode === 'register' && (
-            <>
-              <div className="login-group">
-                <label className="login-label">Họ và tên</label>
-                <div className="login-field">
-                  <User size={18} color="var(--text-dim)" />
-                  <input
-                    type="text"
-                    placeholder="Nguyễn Văn A"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="login-input"
-                  />
+            {mode === 'register' && (
+              <>
+                <div className="login-group">
+                  <label className="login-label" htmlFor="register-full-name">
+                    Họ và tên (không bắt buộc)
+                  </label>
+                  <div className="login-field">
+                    <User size={18} color="var(--text-dim)" />
+                    <input
+                      type="text"
+                      id="register-full-name"
+                      placeholder="Nguyễn Văn A"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="login-input"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="login-group">
-                <label className="login-label">Số điện thoại</label>
-                <div className="login-field">
-                  <Phone size={18} color="var(--text-dim)" />
-                  <input
-                    type="tel"
-                    placeholder="0901234567"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                    className="login-input"
-                    inputMode="numeric"
-                  />
+                <div className="login-group">
+                  <label className="login-label" htmlFor="register-phone">
+                    Số điện thoại
+                  </label>
+                  <div className="login-field">
+                    <Phone size={18} color="var(--text-dim)" />
+                    <input
+                      type="tel"
+                      id="register-phone"
+                      placeholder="0901234567"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                      className="login-input"
+                      inputMode="numeric"
+                    />
+                  </div>
                 </div>
+              </>
+            )}
+
+            <div className="login-group">
+              <label className="login-label" htmlFor="auth-email">
+                Địa chỉ Email
+              </label>
+              <div className="login-field">
+                <Mail size={18} color="var(--text-dim)" />
+                <input
+                  type="email"
+                  id="auth-email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="login-input"
+                />
               </div>
-            </>
-          )}
+            </div>
 
-          <div className="login-group">
-            <label className="login-label">Địa chỉ Email</label>
-            <div className="login-field">
-              <Mail size={18} color="var(--text-dim)" />
-              <input
-                type="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="login-input"
-              />
+            <div className="login-group-last">
+              <div className="login-pw-head">
+                <label className="login-label-inline" htmlFor="auth-password">
+                  Mật khẩu
+                </label>
+                {mode === 'login' && (
+                  <a
+                    href="#forgot"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      toast.info('Vui lòng liên hệ hỗ trợ hoặc nhập lại mật khẩu mẫu');
+                    }}
+                    className="login-forgot"
+                  >
+                    Quên mật khẩu?
+                  </a>
+                )}
+              </div>
+              <div className="login-field">
+                <Lock size={18} color="var(--text-dim)" />
+                <input
+                  type="password"
+                  id="auth-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="login-input"
+                />
+              </div>
             </div>
-          </div>
-
-          <div className="login-group-last">
-            <div className="login-pw-head">
-              <label className="login-label-inline">Mật khẩu</label>
-              {mode === 'login' && (
-                <a
-                  href="#forgot"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toast.info('Vui lòng liên hệ hỗ trợ hoặc nhập lại mật khẩu mẫu');
-                  }}
-                  className="login-forgot"
-                >
-                  Quên mật khẩu?
-                </a>
-              )}
-            </div>
-            <div className="login-field">
-              <Lock size={18} color="var(--text-dim)" />
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="login-input"
-              />
-            </div>
-          </div>
 
             <button type="submit" disabled={loading} className="glow-btn-primary login-submit">
               {loading ? (
-                'Đang xử lý...'
+                <>
+                  <Loader2 size={18} className="spin-animation" />
+                  Đang xử lý...
+                </>
               ) : (
                 <>
                   {mode === 'login' ? 'Đăng nhập ngay' : 'Đăng ký tài khoản'}
@@ -430,6 +859,7 @@ export default function LoginPage({ onLoginSuccess }) {
               <button
                 type="button"
                 onClick={() => {
+                  resetPendingRegistration();
                   setMode('register');
                   setError('');
                 }}
@@ -446,12 +876,13 @@ export default function LoginPage({ onLoginSuccess }) {
                 Đã mua vé mà chưa có tài khoản?
               </button>
             </span>
-          ) : mode === 'register' ? (
+          ) : mode === 'register' && registerStep === 'details' ? (
             <span>
               Đã có tài khoản?{' '}
               <button
                 type="button"
                 onClick={() => {
+                  resetPendingRegistration();
                   setMode('login');
                   setError('');
                 }}
@@ -460,7 +891,7 @@ export default function LoginPage({ onLoginSuccess }) {
                 Đăng nhập tại đây
               </button>
             </span>
-          ) : (
+          ) : mode === 'claim' ? (
             <span>
               Đã có mật khẩu rồi?{' '}
               <button
@@ -475,9 +906,54 @@ export default function LoginPage({ onLoginSuccess }) {
                 Đăng nhập tại đây
               </button>
             </span>
-          )}
+          ) : null}
         </div>
       </div>
+
+      {/* Cancel Modal */}
+      {cancelModalOpen && (
+        <div
+          className="login-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !cancelLoading) {
+              setCancelModalOpen(false);
+            }
+          }}
+        >
+          <div className="login-modal glass-panel">
+            <h3 className="login-modal-title">Xác nhận hủy đăng ký</h3>
+            <p className="login-modal-text">
+              Bạn muốn tiếp tục xác minh hay hủy yêu cầu đăng ký hiện tại? Nếu hủy, mã OTP đã gửi sẽ
+              không còn hiệu lực.
+            </p>
+            <div className="login-modal-actions">
+              <button
+                type="button"
+                className="glow-btn-secondary"
+                disabled={cancelLoading}
+                onClick={() => setCancelModalOpen(false)}
+              >
+                Tiếp tục xác minh
+              </button>
+              <button
+                type="button"
+                className="glow-btn-danger"
+                disabled={cancelLoading}
+                onClick={handleCancelRegistration}
+              >
+                {cancelLoading ? (
+                  <>
+                    <Loader2 size={16} className="spin-animation" />
+                    Đang hủy...
+                  </>
+                ) : (
+                  'Hủy và đăng ký lại'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

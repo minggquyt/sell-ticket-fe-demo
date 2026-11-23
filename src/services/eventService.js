@@ -43,6 +43,9 @@ async function apiRequest(
     const err = new Error(message);
     err.status = res.status;
     err.payload = payload;
+    err.code = payload?.data?.code || null;
+    const retryAfter = Number.parseInt(res.headers.get('Retry-After') || '', 10);
+    err.retryAfter = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null;
     if (authErr) {
       err.isAuthError = true;
       notifyAuthExpired(message, { source: authSource });
@@ -278,19 +281,38 @@ export async function loginUser(email, password) {
 /**
  * Đăng ký tài khoản qua Backend (Route: POST /api/auth/register)
  */
-// <<<<<<< HEAD
 export async function registerUser(email, password, fullName, phone) {
-  const res = await fetch(`${API_BASE_URL}/auth/register`, {
+  return apiRequest('/auth/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, fullName, phone }),
-// =======
-// export async function registerUser(email, password, fullName) {
-//   return apiRequest('/auth/register', {
-//     method: 'POST',
-//     body: { email, password, fullName },
-//     fallbackError: 'Đăng ký thất bại.',
-// >>>>>>> dbb6bcba633adbb84990580b8eb7abc635f395a4
+    body: { email, password, fullName: fullName || undefined, phone },
+    fallbackError: 'Không thể bắt đầu đăng ký.',
+  });
+}
+
+/** Xác minh OTP và hoàn tất đăng ký. API không trả JWT. */
+export async function verifyRegistrationOtp(registrationId, otp) {
+  return apiRequest('/auth/register/verify', {
+    method: 'POST',
+    body: { registrationId, otp },
+    fallbackError: 'Không thể xác minh mã OTP.',
+  });
+}
+
+/** Gửi OTP đăng ký mới; OTP cũ sẽ không còn hiệu lực. */
+export async function resendRegistrationOtp(registrationId) {
+  return apiRequest('/auth/register/resend', {
+    method: 'POST',
+    body: { registrationId },
+    fallbackError: 'Không thể gửi lại mã OTP.',
+  });
+}
+
+/** Hủy phiên đăng ký đang chờ */
+export async function cancelRegistration(registrationId) {
+  return apiRequest('/auth/register/cancel', {
+    method: 'POST',
+    body: { registrationId },
+    fallbackError: 'Không thể hủy phiên đăng ký.',
   });
 }
 
@@ -332,96 +354,30 @@ export async function deleteEventOnBackend(eventId, token) {
   return true;
 }
 
-// Gộp email khách vãng lai vào body API (guest checkout 10/11/2026): gửi
-// nhiều tên trường tương đương để BE cũ (bỏ qua field thừa) và BE mới (đọc
-// field nào cũng được) đều chạy được. Không đổi endpoint / method / field cũ.
-function withGuestFields(body, guest) {
-  if (!guest || !guest.email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(guest.email).trim())) {
-    return body;
-  }
-  const email = String(guest.email).trim().toLowerCase();
-  const fullName = String(guest.fullName || '').trim();
-  return {
-    ...body,
-    guestEmail: email,
-    email,
-    customerEmail: email,
-    ...(fullName ? { fullName, customerName: fullName } : {}),
-  };
-}
-
 /**
  * Giữ ghế theo Seat ID (Route: POST /api/seats/reserve)
  */
-// <<<<<<< HEAD
-// export async function holdSeats(seatIds, token, guest = null) {
-//   const headers = { 'Content-Type': 'application/json' };
-//   if (token) headers['Authorization'] = `Bearer ${token}`;
-
-//   const res = await fetch(`${API_BASE_URL}/seats/reserve`, {
-//     method: 'POST',
-//     headers,
-//     body: JSON.stringify(withGuestFields({ seatIds }, guest)),
-// =======
 export async function holdSeats(seatIds, token) {
   return apiRequest('/seats/reserve', {
     method: 'POST',
     body: { seatIds },
     token,
     fallbackError: 'Không thể giữ các ghế đã chọn.',
-// >>>>>>> dbb6bcba633adbb84990580b8eb7abc635f395a4
   });
 }
 
-// <<<<<<< HEAD
-// export async function holdZones(eventId, zones, token, guest = null) {
-//   const headers = { 'Content-Type': 'application/json' };
-//   if (token) headers['Authorization'] = `Bearer ${token}`;
-
-//   const res = await fetch(`${API_BASE_URL}/seats/reserve-zone`, {
-//     method: 'POST',
-//     headers,
-//     body: JSON.stringify(withGuestFields({ eventId, zones }, guest)),
-// =======
 export async function holdZones(eventId, zones, token) {
   return apiRequest('/seats/reserve-zone', {
     method: 'POST',
     body: { eventId, zones },
     token,
     fallbackError: 'Không thể giữ chỗ theo khu vực đã chọn.',
-// >>>>>>> dbb6bcba633adbb84990580b8eb7abc635f395a4
   });
 }
 
 /**
  * Gọi API lên Backend để hủy giữ chỗ / nhả ghế
  */
-// <<<<<<< HEAD
-// export async function releaseSeats(userId, seatIds, token, orderCode = null, guestEmail = null) {
-//   try {
-//     const authToken = token || null;
-//     const headers = { 'Content-Type': 'application/json' };
-//     if (authToken) {
-//       headers['Authorization'] = `Bearer ${authToken}`;
-//     }
-//     const response = await fetch(`${API_BASE_URL}/seats/release`, {
-//       method: 'POST',
-//       headers,
-//       body: JSON.stringify(
-//         withGuestFields({ userId, seatIds, orderCode }, guestEmail ? { email: guestEmail } : null),
-//       ),
-//     });
-
-//     const data = await response.json();
-//     if (!response.ok) {
-//       throw new Error(data.message || 'Không thể hủy giữ ghế trên hệ thống.');
-//     }
-//     return data;
-//   } catch (err) {
-//     console.error('API releaseSeats error:', err);
-//     throw err;
-//   }
-// =======
 export async function releaseSeats(userId, seatIds, token, orderCode = null) {
   return apiRequest('/seats/release', {
     method: 'POST',
@@ -429,7 +385,6 @@ export async function releaseSeats(userId, seatIds, token, orderCode = null) {
     token: token || null,
     fallbackError: 'Không thể hủy giữ ghế trên hệ thống.',
   });
-// >>>>>>> dbb6bcba633adbb84990580b8eb7abc635f395a4
 }
 
 /**
