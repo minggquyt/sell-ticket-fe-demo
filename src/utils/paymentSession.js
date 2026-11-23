@@ -1,6 +1,72 @@
 export const RESERVATION_STORAGE_PREFIX = 'event_reservation_';
 export const RESERVATION_CHANGED_EVENT = 'sellticket:reservation-changed';
+export const CHECKOUT_INFLIGHT_PREFIX = 'sellticket_checkout_inflight_';
 const DEFAULT_CONFIRM_WINDOW_MS = 30 * 1000;
+const DEFAULT_CHECKOUT_INFLIGHT_TTL_MS = 15 * 1000;
+const inFlightCheckoutMap = new Map();
+
+const getCheckoutInFlightKey = (eventId) => `${CHECKOUT_INFLIGHT_PREFIX}${eventId}`;
+
+export function markCheckoutInFlight(eventId, ttlMs = DEFAULT_CHECKOUT_INFLIGHT_TTL_MS) {
+  if (!eventId) return;
+  const safeTtlMs = Math.max(1000, Number(ttlMs) || DEFAULT_CHECKOUT_INFLIGHT_TTL_MS);
+  const expiresAt = Date.now() + safeTtlMs;
+  const key = getCheckoutInFlightKey(eventId);
+  inFlightCheckoutMap.set(key, expiresAt);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, String(expiresAt));
+    }
+  } catch {
+    /* Bỏ qua nếu trình duyệt chặn localStorage */
+  }
+}
+
+export function clearCheckoutInFlight(eventId) {
+  if (!eventId) return;
+  const key = getCheckoutInFlightKey(eventId);
+  inFlightCheckoutMap.delete(key);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    /* Bỏ qua */
+  }
+}
+
+export function isCheckoutInFlight(eventId) {
+  if (!eventId) return false;
+  const key = getCheckoutInFlightKey(eventId);
+  const nowMs = Date.now();
+  const memExpiresAt = inFlightCheckoutMap.get(key);
+  if (Number.isFinite(memExpiresAt)) {
+    if (memExpiresAt > nowMs) return true;
+    inFlightCheckoutMap.delete(key);
+  }
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) {
+        const storedExpiresAt = Number(raw);
+        if (Number.isFinite(storedExpiresAt) && storedExpiresAt > nowMs) {
+          return true;
+        }
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    /* Bỏ qua */
+  }
+  return false;
+}
+
+export function computeServerOffsetMs(serverTime, fallbackOffsetMs = 0) {
+  const fallback = Number.isFinite(Number(fallbackOffsetMs)) ? Number(fallbackOffsetMs) : 0;
+  if (!serverTime) return fallback;
+  const srvMs = Date.parse(serverTime);
+  return Number.isFinite(srvMs) ? srvMs - Date.now() : fallback;
+}
 
 export const getReservationStorageKey = (eventId) => `${RESERVATION_STORAGE_PREFIX}${eventId}`;
 
@@ -106,8 +172,11 @@ export function getActiveSessions(userId) {
         continue;
       }
 
+      const offsetMs = Number.isFinite(Number(parsed.serverOffsetMs))
+        ? Number(parsed.serverOffsetMs)
+        : 0;
       const expiryMs = getSessionEffectiveExpiryMs(parsed);
-      if (!Number.isFinite(expiryMs) || expiryMs <= nowMs) continue;
+      if (!Number.isFinite(expiryMs) || expiryMs <= nowMs + offsetMs) continue;
 
       list.push({
         ...parsed,
@@ -164,6 +233,12 @@ export function clearOtherUserReservations(userId, keepEventId = null, { silent 
 export function syncServerReservationToStorage(userId, serverSession, { silent = false } = {}) {
   if (!userId || !serverSession?.eventId) return null;
   const existing = readReservation(serverSession.eventId);
+  const existingOffset = Number.isFinite(Number(existing?.serverOffsetMs))
+    ? Number(existing.serverOffsetMs)
+    : 0;
+  const nextServerOffsetMs = serverSession.serverTime
+    ? computeServerOffsetMs(serverSession.serverTime, existingOffset)
+    : existingOffset;
   const nextPayload = {
     ...(existing || {}),
     userId,
@@ -179,6 +254,7 @@ export function syncServerReservationToStorage(userId, serverSession, { silent =
     expiresAt: serverSession.expiresAt || existing?.expiresAt || serverSession.reservedUntil || null,
     confirmUntil: serverSession.confirmUntil || existing?.confirmUntil || null,
     phase: serverSession.phase || existing?.phase || null,
+    serverOffsetMs: nextServerOffsetMs,
     seats:
       Array.isArray(serverSession.seats) && serverSession.seats.length > 0
         ? serverSession.seats
