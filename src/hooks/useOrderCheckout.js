@@ -7,8 +7,10 @@ import {
 } from '../services/eventService';
 import {
   RESERVATION_CHANGED_EVENT,
-  RESERVATION_STORAGE_PREFIX,
-  clearReservation,
+  clearReservationByOrderCode,
+  isReservationStorageEvent,
+  syncOrderPaymentToStorage,
+  updateReservationPhaseIfNeeded,
 } from '../utils/paymentSession.js';
 import { isAuthError } from '../utils/authSession.js';
 
@@ -20,29 +22,6 @@ const TERMINAL_STATUSES = new Set([
   'REFUND_PENDING',
   'REFUNDED',
 ]);
-
-function clearReservationForOrder(orderCode, eventId) {
-  if (eventId) {
-    clearReservation(eventId);
-  }
-  if (typeof localStorage === 'undefined' || !orderCode) return;
-
-  const targetCode = Number(orderCode);
-  const matchingEventIds = [];
-  for (let i = 0; i < localStorage.length; i += 1) {
-    const key = localStorage.key(i);
-    if (!key || !key.startsWith(RESERVATION_STORAGE_PREFIX)) continue;
-    try {
-      const parsed = JSON.parse(localStorage.getItem(key) || 'null');
-      if (parsed && Number(parsed.orderCode) === targetCode) {
-        matchingEventIds.push(key.slice(RESERVATION_STORAGE_PREFIX.length));
-      }
-    } catch {
-      // Bỏ qua record lỗi
-    }
-  }
-  matchingEventIds.forEach((evId) => clearReservation(evId));
-}
 
 function normalizeInitialCheckoutData(initialCheckoutData, orderCode) {
   if (!initialCheckoutData) return null;
@@ -63,6 +42,7 @@ export function useOrderCheckout({
   onOrderUpdated,
 }) {
   const token = user?.token || null;
+  const userId = user?.id || null;
   const initialOrder = normalizeInitialCheckoutData(initialCheckoutData, orderCode);
 
   const [order, setOrder] = useState(() => initialOrder);
@@ -124,7 +104,11 @@ export function useOrderCheckout({
 
       const st = nextOrder.status;
       if (st && TERMINAL_STATUSES.has(st)) {
-        clearReservationForOrder(nextOrder.orderCode || orderCode, nextOrder.eventId);
+        clearReservationByOrderCode(
+          nextOrder.orderCode || orderCode,
+          nextOrder.eventId || null,
+          { silent: true },
+        );
 
         if (terminalNotifiedRef.current !== st) {
           terminalNotifiedRef.current = st;
@@ -139,11 +123,13 @@ export function useOrderCheckout({
             // Bỏ qua lỗi animation trên môi trường headless
           }
         }
+      } else if (st === 'PAYMENT_PROCESSING' && userId) {
+        syncOrderPaymentToStorage(userId, nextOrder, { silent: true });
       }
 
       return nextOrder;
     },
-    [orderCode],
+    [orderCode, userId],
   );
 
   const loadOrderPayment = useCallback(
@@ -165,6 +151,7 @@ export function useOrderCheckout({
             return null;
           }
           if (err?.status === 403 || err?.status === 404 || err?.status === 400) {
+            clearReservationByOrderCode(orderCode, null, { silent: true });
             setNotFound(true);
             setLoadError(err.message || 'Không tìm thấy đơn hàng.');
             setIsLoading(false);
@@ -238,6 +225,14 @@ export function useOrderCheckout({
   } else {
     uiState = 'WAITING';
   }
+
+  // Đồng bộ pha CONFIRMING vào localStorage ngay khi đồng hồ cục bộ qua mốc 120s
+  useEffect(() => {
+    if (uiState !== 'CONFIRMING' || order?.status !== 'PAYMENT_PROCESSING' || !order?.eventId) {
+      return;
+    }
+    updateReservationPhaseIfNeeded(order.eventId, 'CONFIRMING', { silent: true });
+  }, [uiState, order?.status, order?.eventId]);
 
   // 1. Nạp dữ liệu chuẩn từ DB ngay khi mở trang (hỗ trợ F5 hoặc mở từ banner)
   useEffect(() => {
@@ -317,6 +312,7 @@ export function useOrderCheckout({
           setIsLoading(false);
         },
         onNotFound: (err) => {
+          clearReservationByOrderCode(orderCode, null, { silent: true });
           setSseConnected(false);
           setNotFound(true);
           setLoadError(err?.message || 'Không tìm thấy đơn hàng.');
@@ -401,9 +397,7 @@ export function useOrderCheckout({
     if (!token || !orderCode || authExpired || notFound || isTerminal) return undefined;
 
     const handleStorageOrReservation = (e) => {
-      if (e?.type === 'storage' && e.key && !e.key.startsWith(RESERVATION_STORAGE_PREFIX)) {
-        return;
-      }
+      if (!isReservationStorageEvent(e)) return;
       loadOrderPayment({ sync: false });
     };
 
@@ -423,6 +417,7 @@ export function useOrderCheckout({
     setIsCancelling(true);
     try {
       await cancelOrder(orderCode, token);
+      clearReservationByOrderCode(orderCode, order?.eventId || null, { silent: true });
       const latest = await loadOrderPayment({ sync: false });
       return { ok: true, order: latest };
     } catch (err) {
@@ -442,7 +437,7 @@ export function useOrderCheckout({
     } finally {
       setIsCancelling(false);
     }
-  }, [token, orderCode, isCancelling, uiState, loadOrderPayment]);
+  }, [token, orderCode, order?.eventId, isCancelling, uiState, loadOrderPayment]);
 
   return {
     order,
