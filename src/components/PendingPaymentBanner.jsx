@@ -10,10 +10,12 @@ import { formatVND } from '../utils/format.js';
 import {
   RESERVATION_CHANGED_EVENT,
   clearReservation,
+  computeServerOffsetMs,
   formatCountdown,
   formatSeatSummary,
   getActiveSessions,
   getSessionEffectiveExpiryMs,
+  isCheckoutInFlight,
   readReservation,
   saveReservation,
   syncServerReservationToStorage,
@@ -58,6 +60,7 @@ export default function PendingPaymentBanner({
           serverSyncRef.current.verifiedKey = `${serverSession.step}:${serverSession.orderCode || ''}:${serverSession.confirmUntil || serverSession.reservedUntil}`;
           serverSyncRef.current.verifiedAt = Date.now();
           const saved = syncServerReservationToStorage(userId, serverSession);
+          setNowMs(Date.now());
           setCandidate(saved);
           setActiveSession(saved);
           return;
@@ -65,8 +68,11 @@ export default function PendingPaymentBanner({
 
         const locals = getActiveSessions(userId);
         const localProcessing = locals.find((s) => s.step === 'PAYMENT_PROCESSING' && s.orderCode);
+        const inFlightLocal = locals.find(
+          (s) => s.step === 'RESERVED' && isCheckoutInFlight(s.eventId),
+        );
         locals
-          .filter((s) => s.step === 'RESERVED')
+          .filter((s) => s.step === 'RESERVED' && !isCheckoutInFlight(s.eventId))
           .forEach((s) => clearReservation(s.eventId));
 
         if (localProcessing) {
@@ -81,6 +87,12 @@ export default function PendingPaymentBanner({
           } else if (orderData?.status === 'REFUND_PENDING') {
             liveToast.warning(`Đơn #${orderData.orderCode} đã chuyển sang Chờ hoàn tiền!`);
           }
+        }
+        if (inFlightLocal && !localProcessing) {
+          setNowMs(Date.now());
+          setCandidate(inFlightLocal);
+          setActiveSession(inFlightLocal);
+          return;
         }
         setCandidate(null);
         setActiveSession(null);
@@ -116,6 +128,7 @@ export default function PendingPaymentBanner({
   useEffect(() => {
     const syncCandidate = () => {
       const next = getActiveSessions(user?.id)[0] || null;
+      setNowMs(Date.now());
       setCandidate((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       if (!next) setActiveSession(null);
     };
@@ -137,7 +150,10 @@ export default function PendingPaymentBanner({
 
     if (candidate.step === 'RESERVED') {
       const timer = setTimeout(() => {
-        if (!cancelled) setActiveSession(candidate);
+        if (!cancelled) {
+          setNowMs(Date.now());
+          setActiveSession(candidate);
+        }
       }, 0);
       return () => {
         cancelled = true;
@@ -151,7 +167,10 @@ export default function PendingPaymentBanner({
       Date.now() - serverSyncRef.current.verifiedAt < 4000;
     if (recentlyVerified) {
       const timer = setTimeout(() => {
-        if (!cancelled) setActiveSession(candidate);
+        if (!cancelled) {
+          setNowMs(Date.now());
+          setActiveSession(candidate);
+        }
       }, 0);
       return () => {
         cancelled = true;
@@ -191,8 +210,12 @@ export default function PendingPaymentBanner({
           orderData.confirmUntil ||
           candidate.confirmUntil ||
           new Date(new Date(serverExpiresAt).getTime() + 30 * 1000).toISOString();
+        const nextOffset = computeServerOffsetMs(
+          orderData.serverTime,
+          candidate.serverOffsetMs || 0,
+        );
 
-        if (new Date(serverConfirmUntil).getTime() <= Date.now()) {
+        if (new Date(serverConfirmUntil).getTime() <= Date.now() + nextOffset) {
           clearReservation(candidate.eventId);
           notifyOrders?.();
           return;
@@ -206,6 +229,7 @@ export default function PendingPaymentBanner({
           expiresAt: serverExpiresAt,
           confirmUntil: serverConfirmUntil,
           phase: orderData.phase || candidate.phase || null,
+          serverOffsetMs: nextOffset,
         };
         if (
           nextSession.expiresAt !== candidate.expiresAt ||
@@ -214,6 +238,7 @@ export default function PendingPaymentBanner({
         ) {
           saveReservation(candidate.eventId, nextSession, { silent: true });
         }
+        setNowMs(Date.now());
         setActiveSession(nextSession);
       })
       .catch((err) => {
@@ -281,6 +306,10 @@ export default function PendingPaymentBanner({
   }, [activeSession]);
 
   const isReservedHold = activeSession?.step === 'RESERVED';
+  const serverOffsetMs = Number.isFinite(Number(activeSession?.serverOffsetMs))
+    ? Number(activeSession.serverOffsetMs)
+    : 0;
+  const effectiveNowMs = nowMs + serverOffsetMs;
   const expiresAtMs = activeSession
     ? new Date(activeSession.expiresAt || activeSession.reservedUntil).getTime()
     : NaN;
@@ -290,9 +319,9 @@ export default function PendingPaymentBanner({
     activeSession &&
       !isReservedHold &&
       Number.isFinite(expiresAtMs) &&
-      nowMs >= expiresAtMs &&
+      effectiveNowMs >= expiresAtMs &&
       Number.isFinite(confirmUntilMs) &&
-      nowMs < confirmUntilMs,
+      effectiveNowMs < confirmUntilMs,
   );
 
   const targetDeadlineMs = isReservedHold
@@ -301,19 +330,26 @@ export default function PendingPaymentBanner({
       ? confirmUntilMs
       : expiresAtMs;
   const secondsLeft = Number.isFinite(targetDeadlineMs)
-    ? Math.max(0, Math.floor((targetDeadlineMs - nowMs) / 1000))
+    ? Math.max(0, Math.ceil((targetDeadlineMs - effectiveNowMs) / 1000))
     : 0;
 
   // Chỉ kết thúc phiên khi hết hạn giữ chỗ (RESERVED) hoặc hết toàn bộ cửa sổ confirmUntil (150s)
   const isFinalDeadlinePassed = Boolean(
     activeSession &&
       (isReservedHold
-        ? Number.isFinite(expiresAtMs) && nowMs >= expiresAtMs
-        : Number.isFinite(confirmUntilMs) && nowMs >= confirmUntilMs),
+        ? Number.isFinite(expiresAtMs) && effectiveNowMs >= expiresAtMs
+        : Number.isFinite(confirmUntilMs) && effectiveNowMs >= confirmUntilMs),
+  );
+  const isReservedCheckoutInFlight = Boolean(
+    isReservedHold && activeSession?.eventId && isCheckoutInFlight(activeSession.eventId),
   );
 
   useEffect(() => {
     if (!activeSession || !isFinalDeadlinePassed || !user?.token) return undefined;
+    if (isReservedCheckoutInFlight) {
+      expiredKeyRef.current = null;
+      return undefined;
+    }
     const expiryKey = `${activeSession.step}:${activeSession.orderCode || activeSession.eventId}:${activeSession.confirmUntil || activeSession.reservedUntil}`;
     if (expiredKeyRef.current === expiryKey) return undefined;
     expiredKeyRef.current = expiryKey;
@@ -321,11 +357,24 @@ export default function PendingPaymentBanner({
 
     const timer = setTimeout(async () => {
       didRun = true;
-      if (!readReservation(activeSession.eventId)) return;
+      const latest = readReservation(activeSession.eventId);
+      if (!latest) return;
 
       if (activeSession.step === 'RESERVED') {
-        const seatIds = (activeSession.seats || []).map((s) => s.id).filter(Boolean);
+        if (isCheckoutInFlight(activeSession.eventId)) {
+          expiredKeyRef.current = null;
+          return;
+        }
+        if (latest.step !== 'RESERVED') return;
+
+        const seatIds = (latest.seats || activeSession.seats || [])
+          .map((s) => s.id)
+          .filter(Boolean);
         await releaseSeats(user.id, seatIds, user.token).catch(() => {});
+
+        const afterRelease = readReservation(activeSession.eventId);
+        if (afterRelease && afterRelease.step !== 'RESERVED') return;
+
         clearReservation(activeSession.eventId);
         callbacksRef.current.onOrdersChanged?.();
         callbacksRef.current.toast.warning(
@@ -367,7 +416,7 @@ export default function PendingPaymentBanner({
         expiredKeyRef.current = null;
       }
     };
-  }, [activeSession, isFinalDeadlinePassed, user?.id, user?.token]);
+  }, [activeSession, isFinalDeadlinePassed, isReservedCheckoutInFlight, user?.id, user?.token]);
 
   if (!user || !activeSession) return null;
   if (
@@ -395,6 +444,7 @@ export default function PendingPaymentBanner({
 
   const handleCancel = async () => {
     if (isBusy || isConfirming) return;
+    if (isReservedHold && isCheckoutInFlight(activeSession.eventId)) return;
     setIsBusy(true);
     try {
       if (isReservedHold) {
