@@ -50,6 +50,7 @@ import {
   syncServerReservationToStorage,
 } from '../utils/paymentSession.js';
 import { deriveSeatLayout } from '../utils/seatLayout.js';
+import { isJwtExpired, notifyAuthExpired, readStoredUser } from '../utils/authSession.js';
 import { useToast } from '../components/toastContext.js';
 import SeatSelector from '../components/SeatSelector.jsx';
 import ZoneSelector from '../components/ZoneSelector.jsx';
@@ -174,15 +175,11 @@ export default function EventDetailPage({
     if (user?.token && user?.id) {
       return { token: user.token, userId: user.id };
     }
-    try {
-      const saved = JSON.parse(localStorage.getItem('sellticket_user') || 'null');
-      return {
-        token: user?.token || saved?.token || null,
-        userId: user?.id || saved?.id || null,
-      };
-    } catch {
-      return { token: user?.token || null, userId: user?.id || null };
-    }
+    const saved = readStoredUser();
+    return {
+      token: user?.token || saved?.token || null,
+      userId: user?.id || saved?.id || null,
+    };
   };
 
   const reloadBackendEventId = event?.id;
@@ -585,9 +582,11 @@ export default function EventDetailPage({
       }
 
       // Gọi API Backend nhả ghế (chỉ nhả ghế RESERVED)
-      await releaseSeats(userIdToRelease, seatIdsToRelease, token, null).catch((e) =>
-        console.warn('releaseSeats API warning:', e),
-      );
+      if (token) {
+        await releaseSeats(userIdToRelease, seatIdsToRelease, token, null).catch((e) =>
+          console.warn('releaseSeats API warning:', e),
+        );
+      }
 
       // Tải lại dữ liệu ghế mới nhất từ backend
       reloadBackendSeats();
@@ -597,6 +596,7 @@ export default function EventDetailPage({
       }
     } catch (err) {
       console.error('Lỗi khi hủy giữ ghế:', err);
+      if (err?.isAuthError) return;
       if (!silent) {
         toast.error(err.message || 'Không thể hủy giữ ghế. Vui lòng thử lại!');
       }
@@ -701,7 +701,7 @@ export default function EventDetailPage({
           return;
         }
 
-        fetchOrderPayment(activeOrderCode, token, { sync: false })
+        fetchOrderPayment(activeOrderCode, token, { sync: false, background: true })
           .then((orderData) => {
             if (orderData?.status === 'SUCCESS') {
               showLiveSuccessUI(orderData, true);
@@ -1041,7 +1041,7 @@ export default function EventDetailPage({
         if (verifyingPendingRef.current === parsedData.orderCode) return;
         verifyingPendingRef.current = parsedData.orderCode;
 
-        fetchOrderPayment(parsedData.orderCode, token, { sync: false })
+        fetchOrderPayment(parsedData.orderCode, token, { sync: false, background: true })
           .then((orderData) => {
             if (cancelled) return;
             const {
@@ -1153,8 +1153,8 @@ export default function EventDetailPage({
         }
         if (parsedData.seats && Array.isArray(parsedData.seats)) {
           const ids = parsedData.seats.map((s) => s.id).filter(Boolean);
-          if (ids.length > 0) {
-            const token = latestRef.current.userToken;
+          const token = latestRef.current.userToken;
+          if (ids.length > 0 && token) {
             releaseSeats(parsedData.userId || user?.id, ids, token, null)
               .then(() => latestRef.current.reloadBackendSeats?.())
               .catch(() => {});
@@ -1223,9 +1223,14 @@ export default function EventDetailPage({
       return;
     }
 
+    const token = user?.token;
+    if (!token || isJwtExpired(token, { serverOffsetMs: user?.serverOffsetMs || 0 })) {
+      notifyAuthExpired(undefined, { source: 'proactive' });
+      return;
+    }
+
     setIsReserving(true);
     try {
-      const token = user?.token;
       let seatIdsToCheckout = [];
 
       if (isSeated) {
@@ -1331,6 +1336,7 @@ export default function EventDetailPage({
       }
     } catch (err) {
       console.error('Lỗi giữ ghế:', err);
+      if (err?.isAuthError) return;
       toast.error(err.response?.data?.message || err.message || 'Có lỗi xảy ra khi giữ ghế!');
     } finally {
       setIsReserving(false);
@@ -1346,13 +1352,16 @@ export default function EventDetailPage({
   // --- XỬ LÝ KHỞI TẠO THANH TOÁN QR NỘI BỘ ---
   const handlePayment = async () => {
     if (isProcessingPaymentRef.current) return;
+    const token = user?.token;
+    if (!token || isJwtExpired(token, { serverOffsetMs: user?.serverOffsetMs || 0 })) {
+      notifyAuthExpired(undefined, { source: 'proactive' });
+      return;
+    }
     isProcessingPaymentRef.current = true;
     setIsProcessingPayment(true);
     markCheckoutInFlight(event?.id);
 
     try {
-      const token = user?.token;
-
       let seatIdsToCheckout =
         Array.isArray(reservedSeatIds) && reservedSeatIds.length > 0
           ? reservedSeatIds.filter(Boolean)
@@ -1461,6 +1470,7 @@ export default function EventDetailPage({
       clearCheckoutInFlight(event?.id);
       isProcessingPaymentRef.current = false;
       setIsProcessingPayment(false);
+      if (err?.isAuthError) return;
 
       const errMsg =
         err.response?.data?.message ||

@@ -1,5 +1,5 @@
 // Toast chỉ hiển thị tạm thời, không lưu vào Trung tâm Thông báo. Thông báo nghiệp vụ được dựng từ đơn hàng ở utils/format.js#buildNotifications.
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { ToastContext } from './toastContext.js';
 import './Toast.css';
@@ -97,15 +97,18 @@ export function ToastProvider({ children }) {
     });
   }, []);
 
-  const toast = {
-    success: (message) => push('success', message),
-    error: (message) => push('error', message),
-    warning: (message) => push('warning', message),
-    info: (message) => push('info', message),
-    readIds,
-    markRead,
-    markAllRead,
-  };
+  const toast = useMemo(
+    () => ({
+      success: (message) => push('success', message),
+      error: (message) => push('error', message),
+      warning: (message) => push('warning', message),
+      info: (message) => push('info', message),
+      readIds,
+      markRead,
+      markAllRead,
+    }),
+    [push, readIds, markRead, markAllRead],
+  );
 
   return (
     <ToastContext.Provider value={toast}>

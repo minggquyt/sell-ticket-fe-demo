@@ -99,6 +99,7 @@ export default function AdminPage({
       );
       toast.success(`Đã xác nhận hoàn tiền thành công cho đơn #${orderCode}!`);
     } catch (err) {
+      if (err?.isAuthError) return;
       toast.error(err.message || 'Không thể xác nhận hoàn tiền cho đơn này.');
     }
   };
@@ -115,6 +116,7 @@ export default function AdminPage({
       );
       toast.warning(`Đã báo sai thông tin TK cho đơn #${orderCode}.`);
     } catch (err) {
+      if (err?.isAuthError) return;
       toast.error(err.message || 'Không thể báo sai thông tin tài khoản.');
     }
   };

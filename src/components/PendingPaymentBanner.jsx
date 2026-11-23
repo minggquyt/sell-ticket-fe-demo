@@ -78,6 +78,7 @@ export default function PendingPaymentBanner({
         if (localProcessing) {
           const orderData = await fetchOrderPayment(localProcessing.orderCode, token, {
             sync: false,
+            background: true,
           }).catch(() => null);
           clearReservation(localProcessing.eventId);
           const { toast: liveToast, onOrdersChanged: notifyOrders } = callbacksRef.current;
@@ -178,7 +179,7 @@ export default function PendingPaymentBanner({
       };
     }
 
-    fetchOrderPayment(candidate.orderCode, user.token, { sync: false })
+    fetchOrderPayment(candidate.orderCode, user.token, { sync: false, background: true })
       .then((orderData) => {
         if (cancelled) return;
         const { toast: liveToast, onOrdersChanged: notifyOrders } = callbacksRef.current;
@@ -388,6 +389,7 @@ export default function PendingPaymentBanner({
         // Đã quá confirmUntil (150s): đối soát cuối (BE throttle) thay vì tự cancelOrder mù quáng
         const orderData = await fetchOrderPayment(activeSession.orderCode, user.token, {
           sync: true,
+          background: true,
         }).catch(() => null);
         if (orderData?.status === 'SUCCESS') {
           outcome = 'SUCCESS';
@@ -449,7 +451,11 @@ export default function PendingPaymentBanner({
     try {
       if (isReservedHold) {
         const seatIds = (activeSession.seats || []).map((s) => s.id).filter(Boolean);
-        await releaseSeats(user.id, seatIds, user.token).catch(() => {});
+        let authFailed = false;
+        await releaseSeats(user.id, seatIds, user.token).catch((err) => {
+          if (err?.isAuthError) authFailed = true;
+        });
+        if (authFailed) return;
         clearReservation(activeSession.eventId);
         onOrdersChanged?.();
         toast.info('Đã hủy giữ chỗ và mở lại ghế thành công.');
@@ -460,6 +466,7 @@ export default function PendingPaymentBanner({
           onOrdersChanged?.();
           toast.info(`Đã hủy đơn #${activeSession.orderCode} và mở lại ghế.`);
         } catch (err) {
+          if (err?.isAuthError) return;
           toast.warning(err?.message || 'Không thể hủy đơn hàng ở trạng thái hiện tại.');
           await pullServerActiveSession(true);
           onOrdersChanged?.();
