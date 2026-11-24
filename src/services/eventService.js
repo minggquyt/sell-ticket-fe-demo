@@ -398,7 +398,14 @@ export async function holdZones(eventId, zones, token) {
     fallbackError: 'Không thể giữ chỗ theo khu vực đã chọn.',
   });
 }
-
+export async function confirmPartialHoldSeats(confirmSeatIds, token) {
+  return apiRequest('/seats/confirm-partial-hold', {
+    method: 'POST',
+    body: { confirmSeatIds }, // Lưu ý: kiểm tra xem controller BE nhận req.body.seatIds hay req.body.confirmSeatIds
+    token,
+    fallbackError: 'Không thể xác nhận giữ các ghế còn lại.',
+  });
+}
 /**
  * Gọi API lên Backend để hủy giữ chỗ / nhả ghế
  */
