@@ -33,8 +33,10 @@ import {
   releaseSeats,
   fetchOrderPayment,
   fetchMyActiveSession,
+  confirmPartialHoldSeats
 } from '../services/eventService';
 import { formatVND } from '../utils/format.js';
+import PartialHoldModal from '../components/PartialHoldModal.jsx';
 import {
   RESERVATION_CHANGED_EVENT,
   clearAllReservations,
@@ -206,6 +208,10 @@ export default function EventDetailPage({
     () => getReservationSeatsKey(isSeated ? selectedSeats : reservedZoneSeats),
     [isSeated, selectedSeats, reservedZoneSeats],
   );
+
+  const [partialHoldPrompt, setPartialHoldPrompt] = useState(null);
+  const [isConfirmingPartial, setIsConfirmingPartial] = useState(false);
+
   const reservedStateRef = useRef({
     isReserved: false,
     step: null,
@@ -330,8 +336,8 @@ export default function EventDetailPage({
           if (hasSeatReservationMismatch(seats, currentUserId, saved)) {
             const verifyOrderCode =
               saved &&
-              String(saved.userId || '') === String(currentUserId) &&
-              saved.step === 'PAYMENT_PROCESSING'
+                String(saved.userId || '') === String(currentUserId) &&
+                saved.step === 'PAYMENT_PROCESSING'
                 ? saved.orderCode
                 : null;
             reconcileServerRef.current?.({ verifyOrderCode });
@@ -1108,7 +1114,7 @@ export default function EventDetailPage({
           );
           if (saved) applySessionToUI(saved);
         })
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => {
           if (verifyingPendingRef.current === 'SESSION_SYNC') {
             verifyingPendingRef.current = null;
@@ -1265,8 +1271,8 @@ export default function EventDetailPage({
       const cur = reservedStateRef.current;
       const currentExpectedUntil =
         current.step === 'PAYMENT_PROCESSING' &&
-        current.phase === 'CONFIRMING' &&
-        current.confirmUntil
+          current.phase === 'CONFIRMING' &&
+          current.confirmUntil
           ? current.confirmUntil
           : current.expiresAt || current.reservedUntil || null;
       const currentSeatKeyValue = getReservationSeatsKey(current.seats);
@@ -1310,6 +1316,139 @@ export default function EventDetailPage({
     };
   }, [event?.id, user?.id, isSeated]);
 
+  const applyHeldSeatedReservation = useCallback(
+    ({ holdData, fallbackSeatIds = [], seq }) => {
+      if (seq !== undefined && seq !== reservationMutationSeqRef.current) {
+        return;
+      }
+
+      const expiry = holdData?.reserved_until || holdData?.reservedUntil;
+      const heldSeatsData = holdData?.seats || holdData?.reservedSeats || [];
+      if (!expiry) {
+        throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
+      }
+
+      if (heldSeatsData.length > 0) {
+        setSelectedSeats(
+          heldSeatsData.map((seat) => ({
+            id: seat.id || seat.seatId || seat.seat_id,
+            code: seat.seat_number || seat.seatNumber,
+            tier: seat.zone_name || seat.zoneName || singleSeatTier.name || 'Standard',
+            price: Number(seat.price) || singleSeatTier.price,
+            color: singleSeatTier.color || '#3b82f6',
+          })),
+        );
+      }
+
+      const finalSeatIds =
+        holdData?.seatIds?.length > 0
+          ? holdData.seatIds
+          : heldSeatsData.length > 0
+            ? heldSeatsData.map((s) => s.id || s.seatId || s.seat_id).filter(Boolean)
+            : fallbackSeatIds;
+
+      const nextOffset = computeServerOffsetMs(holdData?.serverTime, 0);
+      setServerOffsetMs(nextOffset);
+      setNowMs(Date.now());
+      setOtherEventSession(null);
+      setReservedSeatIds(finalSeatIds);
+      setReservedUntilTime(expiry);
+      setIsReserved(true);
+      clearOtherUserReservations(user.id, event.id, { silent: true });
+      saveReservation(event.id, {
+        userId: user?.id,
+        step: 'RESERVED',
+        eventId: event.id,
+        eventTitle: event.title,
+        eventType: event.event_type || 'SEAT_BASED',
+        totalAmount:
+          heldSeatsData.reduce((s, r) => s + (Number(r.price) || 0), 0) || totalPrice,
+        reservedUntil: expiry,
+        serverOffsetMs: nextOffset,
+        seats: heldSeatsData,
+      });
+    },
+    [event, singleSeatTier, totalPrice, user?.id],
+  );
+
+    const handleCancelPartialHold = () => {
+    if (isConfirmingPartial) return;
+    // Tăng seq để vô hiệu hóa mọi phản hồi muộn thuộc phiên partial này
+    reservationMutationSeqRef.current += 1;
+    setSelectedSeats([]);
+    setPartialHoldPrompt(null);
+  };
+
+  const handleConfirmPartialHold = async () => {
+    if (!partialHoldPrompt || isConfirmingPartial) return;
+
+    const seatIdsToConfirm = partialHoldPrompt.availableSeatIds;
+    if (!Array.isArray(seatIdsToConfirm) || seatIdsToConfirm.length === 0) {
+      setPartialHoldPrompt(null);
+      return;
+    }
+
+    if (!user) {
+      toast.info('Vui lòng đăng nhập để giữ chỗ.');
+      setPartialHoldPrompt(null);
+      onRequireLogin?.();
+      return;
+    }
+
+    const token = user?.token;
+    if (!token || isJwtExpired(token, { serverOffsetMs: user?.serverOffsetMs || 0 })) {
+      setPartialHoldPrompt(null);
+      notifyAuthExpired(undefined, { source: 'proactive' });
+      return;
+    }
+
+    reservationMutationSeqRef.current += 1;
+    const activeSeq = reservationMutationSeqRef.current;
+    setIsConfirmingPartial(true);
+
+    try {
+      const confirmData = await confirmPartialHoldSeats(seatIdsToConfirm, token);
+      if (activeSeq !== reservationMutationSeqRef.current) return;
+
+      setPartialHoldPrompt(null);
+
+      applyConfirmedPartialReservation({
+        confirmData,
+        fallbackSeatIds: seatIdsToConfirm,
+      });
+      toast.success('Đã giữ thành công các ghế còn trống!');
+    } catch (err) {
+      console.error('Lỗi xác nhận giữ ghế một phần:', err);
+      if (activeSeq !== reservationMutationSeqRef.current) return;
+
+      if (err?.isAuthError) {
+        setPartialHoldPrompt(null);
+        return;
+      }
+
+      const errCode = err?.code || err?.payload?.data?.code;
+      const errMsg =
+        err?.payload?.message ||
+        err?.message ||
+        'Không thể giữ các ghế còn lại.';
+
+      if (
+        errCode === 'PARTIAL_HOLD_EXPIRED' ||
+        errCode === 'USER_HAS_ACTIVE_HOLD' ||
+        /phiên giữ vé chưa hoàn tất/i.test(errMsg)
+      ) {
+        
+        setSelectedSeats([]);
+        setPartialHoldPrompt(null);
+        reconcileServerRef.current?.();
+      }
+
+      toast.error(errMsg);
+    } finally {
+      setIsConfirmingPartial(false);
+    }
+  };
+
   // --- XỬ LÝ GIỮ GHẾ ---
   const handleReserveSeats = async () => {
     if (isReserving || isReserved || otherEventSession) return;
@@ -1331,6 +1470,7 @@ export default function EventDetailPage({
 
     isReservingRef.current = true;
     reservationMutationSeqRef.current += 1;
+    const currentSeq = reservationMutationSeqRef.current;
     setIsReserving(true);
     try {
       const commitHeldReservation = ({ expiry, serverTime, seatIds, seats, eventType }) => {
@@ -1372,8 +1512,8 @@ export default function EventDetailPage({
         }
 
         const holdData = await holdSeats(seatIdsToCheckout, token);
-        const expiry = holdData?.reserved_until;
-        const heldSeatsData = holdData?.seats || [];
+        const expiry = holdData?.reserved_until || holdData?.reservedUntil;
+        const heldSeatsData = holdData?.seats || holdData?.reservedSeats || [];
         if (!expiry) throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
 
         if (heldSeatsData.length > 0) {
@@ -1418,9 +1558,36 @@ export default function EventDetailPage({
         });
       }
     } catch (err) {
+      const errCode = err?.code || err?.payload?.data?.code;
+      const partialData = errCode === 'PARTIAL_AVAILABILITY' ? err?.payload?.data : null;
+
+      if (
+        partialData &&
+        Array.isArray(partialData.availableSeatIds) &&
+        partialData.availableSeatIds.length > 0
+      ) {
+        setPartialHoldPrompt({
+          seq: currentSeq,
+          unavailableSeats: partialData.unavailableSeats || [],
+          availableSeats: partialData.availableSeats || [],
+          availableSeatIds: partialData.availableSeatIds,
+        });
+        return;
+      }
+
       console.error('Lỗi giữ ghế:', err);
       if (err?.isAuthError) return;
       const errMsg = err.response?.data?.message || err.message || 'Có lỗi xảy ra khi giữ ghế!';
+
+      if (errCode === 'ALL_SEATS_TAKEN') {
+        setSelectedSeats([]);
+        setReservedZoneSeats?.([]);
+        setReservedSeatIds?.([]);
+        setReservedUntilTime?.(null);
+        setIsReserved?.(false);
+        clearReservation?.(event.id);
+      }
+
       toast.error(errMsg);
       if (
         err?.payload?.data?.code === 'USER_HAS_ACTIVE_HOLD' ||
@@ -1434,6 +1601,58 @@ export default function EventDetailPage({
       setIsReserving(false);
     }
   };
+
+  // Áp dụng dữ liệu giữ ghế thành công (dùng cho confirmPartialHold)
+  const applyConfirmedPartialReservation = useCallback(
+    ({ confirmData, fallbackSeatIds = [] }) => {
+      const expiry = confirmData?.reserved_until || confirmData?.reservedUntil;
+      const heldSeatsData = confirmData?.seats || confirmData?.reservedSeats || [];
+      if (!expiry) {
+        throw new Error('Không nhận được thời gian giữ chỗ từ hệ thống.');
+      }
+
+      if (heldSeatsData.length > 0) {
+        setSelectedSeats(
+          heldSeatsData.map((seat) => ({
+            id: seat.id || seat.seatId || seat.seat_id,
+            code: seat.seat_number || seat.seatNumber,
+            tier: seat.zone_name || seat.zoneName || singleSeatTier.name || 'Standard',
+            price: Number(seat.price) || singleSeatTier.price,
+            color: singleSeatTier.color || '#3b82f6',
+          })),
+        );
+      }
+
+      const finalSeatIds =
+        confirmData?.seatIds?.length > 0
+          ? confirmData.seatIds
+          : heldSeatsData.length > 0
+            ? heldSeatsData.map((s) => s.id || s.seatId || s.seat_id).filter(Boolean)
+            : fallbackSeatIds;
+
+      const nextOffset = computeServerOffsetMs(confirmData?.serverTime, 0);
+      setServerOffsetMs(nextOffset);
+      setNowMs(Date.now());
+      setOtherEventSession(null);
+      setReservedSeatIds(finalSeatIds);
+      setReservedUntilTime(expiry);
+      setIsReserved(true);
+      clearOtherUserReservations(user.id, event.id, { silent: true });
+      saveReservation(event.id, {
+        userId: user?.id,
+        step: 'RESERVED',
+        eventId: event.id,
+        eventTitle: event.title,
+        eventType: event.event_type || 'SEAT_BASED',
+        totalAmount:
+          heldSeatsData.reduce((s, r) => s + (Number(r.price) || 0), 0) || totalPrice,
+        reservedUntil: expiry,
+        serverOffsetMs: nextOffset,
+        seats: heldSeatsData,
+      });
+    },
+    [event, singleSeatTier, totalPrice, user?.id],
+  );
 
   // --- TIẾP TỤC PHIÊN THANH TOÁN QR ĐANG DỞ ---
   const handleResumePendingPayment = () => {
@@ -1502,11 +1721,11 @@ export default function EventDetailPage({
           ? savedObj.seats
           : isSeated
             ? selectedSeats.map((s) => ({
-                id: s.id,
-                seat_number: s.code,
-                price: s.price,
-                zone_name: s.tier,
-              }))
+              id: s.id,
+              seat_number: s.code,
+              price: s.price,
+              zone_name: s.tier,
+            }))
             : reservedZoneSeats;
 
       const nextOffset = computeServerOffsetMs(checkoutData?.serverTime, serverOffsetMs);
@@ -1701,6 +1920,17 @@ export default function EventDetailPage({
           </div>
         </div>
       )}
+
+      {/* Model xác nhận giữ các ghế còn lại */}
+      <PartialHoldModal
+        isOpen={Boolean(partialHoldPrompt)}
+        onClose={handleCancelPartialHold}
+        onConfirm={handleConfirmPartialHold}
+        isSubmitting={isConfirmingPartial}
+        unavailableSeats={partialHoldPrompt?.unavailableSeats || []}
+        availableSeats={partialHoldPrompt?.availableSeats || []}
+        seatPrice={singleSeatTier?.price || 0}
+      />
 
       {/* TAB: BOOKING - Bước 1: Chọn vé */}
       {activeTab === 'booking' && bookingStep === 'booking' && (
