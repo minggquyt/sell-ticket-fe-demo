@@ -6,13 +6,37 @@ import {
   notifyAuthExpired,
 } from '../utils/authSession.js';
 
-// Cấu hình URL Backend: ưu tiên localhost khi chạy môi trường local dev, fallback VITE_API_URL
-export const API_BASE_URL = (
-  typeof window !== 'undefined' &&
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? 'http://localhost:3000/api'
-    : import.meta.env?.VITE_API_URL || 'http://localhost:3000/api'
-).replace(/\/$/, '');
+export const DEFAULT_LOCAL_API_URL = 'http://localhost:3000/api';
+export const DEFAULT_PROD_API_URL = 'https://sell-ticket-be-bcn-bcc127d1b2cd.herokuapp.com/api';
+
+/**
+ * Chuẩn hóa URL backend:
+ * - Cắt khoảng trắng và mọi dấu '/' ở cuối.
+ * - Nếu chưa kết thúc bằng '/api', tự động gắn '/api' vào cuối.
+ */
+export function normalizeApiBaseUrl(rawUrl) {
+  const trimmed = String(rawUrl || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  return /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
+}
+
+/**
+ * Thứ tự ưu tiên:
+ * 1. Biến môi trường `VITE_API_URL` (nếu có giá trị non-empty).
+ * 2. Nếu chạy trên `localhost` / `127.0.0.1` -> DEFAULT_LOCAL_API_URL.
+ * 3. Các môi trường deploy khác -> DEFAULT_PROD_API_URL.
+ */
+export function resolveApiBaseUrl(envUrl, hostname = '') {
+  const fromEnv = normalizeApiBaseUrl(envUrl);
+  if (fromEnv) return fromEnv;
+  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+  return isLocal ? DEFAULT_LOCAL_API_URL : DEFAULT_PROD_API_URL;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl(
+  import.meta.env?.VITE_API_URL,
+  typeof window !== 'undefined' ? window.location.hostname : '',
+);
 
 /**
  * Lõi gọi API duy nhất cho toàn Frontend (Anti-Corruption Layer):

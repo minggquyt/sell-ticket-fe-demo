@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "server": "node ../be/app.js",
+    "server": "node ../sell-ticket-be-demo/app.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "prettier --write \"src/**/*.{js,jsx,css}\" \"*.{js,json,html}\""
